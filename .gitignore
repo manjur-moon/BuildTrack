@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+# Do not commit generated Prisma client or auth schema comparison output
+src/generated/prisma/
+prisma/better-auth.generated.prisma
+.DS_Store
