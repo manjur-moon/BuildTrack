@@ -1,0 +1,7 @@
+/* All color tokens inherited from the approved Charcoal / Muted Sage theme. */
+.bt-team .bt-crud-editor { max-width: 920px; }
+.bt-team .bt-crud-form select { min-width: 0; max-width: 100%; }
+.bt-team .bt-crud-primary { cursor: pointer; }
+.bt-team .bt-crud-actions button:disabled { opacity: .55; cursor: not-allowed; }
+.bt-team .bt-crud-feedback { background: var(--bt-surface); color: var(--bt-fg); }
+@media (max-width: 700px) { .bt-team .bt-crud-form { grid-template-columns: 1fr; } }
