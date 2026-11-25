@@ -1,0 +1,20 @@
+"use client";
+import { useEffect, useState } from "react";
+import { useTheme } from "next-themes";
+import { BtIcon } from "./icons";
+
+export function ThemeSwitcher({ compact = false }: { compact?: boolean }) {
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  return <label className="bt-theme-control">
+    <BtIcon name="sun" size={17} />
+    {!compact && <span className="bt-theme-caption">Theme</span>}
+    <select aria-label="Color theme" value={mounted ? theme ?? "system" : "system"} disabled={!mounted}
+      onChange={(e) => setTheme(e.target.value)}>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+      <option value="system">System</option>
+    </select>
+  </label>;
+}
