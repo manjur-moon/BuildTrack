@@ -17,6 +17,7 @@ const sections: readonly { label: string; items: readonly NavDefinition[] }[] = 
     { key: "sites", label: "Sites", href: "/dashboard/sites", icon: "hard-hat", description: "Locations and on-site updates", permissions: ["site:view"] },
     { key: "media", label: "Photo evidence", href: "/dashboard/media", icon: "building", description: "Private project and site photography", permissions: ["project:view", "site:view"] },
     { key: "tasks", label: "Tasks", href: "/dashboard/tasks", icon: "check-square", description: "Assigned work and milestones", permissions: ["task:view"] },
+    { key: "progress", label: "Daily progress", href: "/dashboard/progress", icon: "check-square", description: "Site reports and photographic evidence", permissions: ["report:view", "task:status:update"] },
     { key: "milestones", label: "Milestones", href: "/dashboard/milestones", icon: "check-square", description: "Project deadlines and deliverables", permissions: ["project:view"] },
     { key: "materials", label: "Materials", href: "/dashboard/materials", icon: "boxes", description: "Inventory and stock movements", permissions: ["inventory:view"] },
   ] },

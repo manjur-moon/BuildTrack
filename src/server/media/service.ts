@@ -1,3 +1,4 @@
+import { reportAccess } from "@/server/progress/access";
 import { ApiError } from "@/server/api/errors";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/server/db/client";
@@ -8,7 +9,7 @@ import { MAX_IMAGE_BYTES, mediaPublicDTO, type InitMedia, type ListMediaQuery } 
 import { deleteStoredObject, presignStagingUpload, readyKey, sanitizeAndPublish, signedPrivateView, temporaryKey } from "./storage";
 
 const select = {
-  id: true, organizationId: true, projectId: true, siteId: true, objectKey: true,
+  id: true, organizationId: true, projectId: true, siteId: true, reportId: true, objectKey: true,
   originalName: true, mimeType: true, byteSize: true, status: true,
   createdAt: true, deletedAt: true, uploadedByMembershipId: true,
 } as const;
@@ -131,7 +132,7 @@ export async function listMedia(actor: AuthorizationContext, query: ListMediaQue
       skip: (query.page - 1) * query.limit, take: query.limit }),
     prisma.fileAttachment.count({ where }),
   ]);
-  return { items: rows.map((row) => mediaPublicDTO(row, mayDelete(actor, row))), total,
+  return { items: rows.map((row) => ({ ...mediaPublicDTO(row, mayDelete(actor, row)), uploadedByMe: row.uploadedByMembershipId === actor.membershipId })), total,
     page: query.page, limit: query.limit, totalPages: Math.max(1, Math.ceil(total / query.limit)),
     canUpload: hasPermission(actor, query.kind === "PROJECT" ? "project:update" : "site:update", scope.resource),
   };
@@ -140,19 +141,26 @@ export async function listMedia(actor: AuthorizationContext, query: ListMediaQue
 export async function getPrivateMediaUrl(actor: AuthorizationContext, id: string) {
   const row = await findMedia(actor, id);
   if (!row || row.status !== "READY") throw new ApiError(404, "NOT_FOUND", "Media not found.");
-  await authorizeExistingMedia(actor, row, "read");
+  if (row.reportId) {
+    await prisma.$transaction(async tx => {
+      const report = await tx.dailyProgressReport.findFirst({where:{id:row.reportId!,organizationId:actor.organizationId},select:{projectId:true,siteId:true,taskId:true,reportedByMembershipId:true}});
+      if (!report) throw new ApiError(404,"NOT_FOUND","Media not found.");
+      const access = await reportAccess(tx,actor,report.projectId,report.siteId,hasPermission(actor,"report:view",{organizationId:actor.organizationId,projectId:report.projectId,siteId:report.siteId})?undefined:report.taskId??undefined,false);
+      if (access.restricted && report.reportedByMembershipId !== actor.membershipId) throw new ApiError(404,"NOT_FOUND","Media not found.");
+    });
+  } else await authorizeExistingMedia(actor, row, "read");
   return signedPrivateView(row.objectKey);
 }
 
 export async function deleteMedia(actor: AuthorizationContext, id: string, requestId: string) {
   const row = await findMedia(actor, id);
-  if (!row || row.status !== "READY") throw new ApiError(404, "NOT_FOUND", "Media not found.");
+  if (!row || row.status !== "READY" || row.reportId) throw new ApiError(404, "NOT_FOUND", "Media not found.");
   await authorizeExistingMedia(actor, row, "read");
   if (!mayDelete(actor, row)) throw new ApiError(404, "NOT_FOUND", "Media not found.");
   const scope = await authorizeExistingMedia(actor, row, "write");
   const updated = await prisma.$transaction(async (tx) => {
     await lockResourceForMutation(tx, actor, scope.projectId, scope.siteId, scope.required, scope.resource);
-    const result = await tx.fileAttachment.updateMany({ where: { id, organizationId: actor.organizationId, status: "READY", deletedAt: null },
+    const result = await tx.fileAttachment.updateMany({ where: { id, organizationId: actor.organizationId, status: "READY", deletedAt: null, reportId: null },
       data: { status: "DELETED", deletedAt: new Date() } });
     if (result.count !== 1) throw new ApiError(409, "CONFLICT", "Media already deleted.");
     await tx.auditEvent.create({ data: { organizationId: actor.organizationId, actorMembershipId: actor.membershipId,
