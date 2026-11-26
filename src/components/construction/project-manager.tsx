@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ListControls, ListPagination } from "./list-controls";
 import Link from "next/link";
 import { api, jsonRequest, type Page, type Project } from "./api";
 
@@ -9,9 +11,12 @@ type Form = typeof emptyForm;
 const projectStatuses = ["PLANNED", "ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED"];
 
 export function ProjectManager() {
-  const [data, setData] = useState<Page<Project> | null>(null);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
+  const [loadFailure, setLoadFailure] = useState<{ key: string; message: string } | null>(null);
+  const [loaded, setLoaded] = useState<{ key: string; result: Page<Project> } | null>(null);
+  const router = useRouter();
+  const params = useSearchParams();
+  const query = params.toString();
+  const listUrl = `/api/v1/projects${query ? `?${query}` : ""}`;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -24,11 +29,13 @@ export function ProjectManager() {
   const refresh = useCallback(() => setRevision((n) => n + 1), []);
   useEffect(() => {
     const controller = new AbortController();
-    api<Page<Project>>(`/api/v1/projects?page=${page}&limit=20`, { signal: controller.signal })
-      .then((result) => { if (!controller.signal.aborted) { setData(result); setError(""); setLoading(false); } })
-      .catch((reason: unknown) => { if (!controller.signal.aborted) { setError(reason instanceof Error ? reason.message : "Unable to load projects."); setLoading(false); } });
+    api<Page<Project>>(listUrl, { signal: controller.signal })
+      .then((result) => { if (!controller.signal.aborted) { setLoaded({ key: `${listUrl}:${revision}`, result }); setLoadFailure(null); setError(""); } })
+      .catch((reason: unknown) => { if (!controller.signal.aborted) { setLoadFailure({ key: `${listUrl}:${revision}`, message: reason instanceof Error ? reason.message : "Unable to load projects." }); setError(reason instanceof Error ? reason.message : "Unable to load projects."); } });
     return () => controller.abort();
-  }, [page, revision]);
+  }, [listUrl, revision]);
+  const data = loaded?.key === `${listUrl}:${revision}` ? loaded.result : null;
+  const loading = data === null && loadFailure?.key !== `${listUrl}:${revision}`;
 
   function openCreate() { setEditing(null); setForm(emptyForm); setDraftKey(crypto.randomUUID()); setFormOpen(true); setError(""); }
   function openEdit(project: Project) {
@@ -61,7 +68,7 @@ export function ProjectManager() {
           location: form.location, startDate: form.startDate, expectedEndDate: form.expectedEndDate,
         }, draftKey));
         setNotice("Project created successfully.");
-        setPage(1);
+        router.replace("/dashboard/projects", { scroll: false });
       }
       setFormOpen(false); setEditing(null); refresh();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Unable to save project."); }
@@ -75,7 +82,6 @@ export function ProjectManager() {
       setNotice("Project archived. Existing records were retained."); refresh();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Unable to archive project."); }
   }
-  function paginate(next: number) { setPage(next); setLoading(true); setFormOpen(false); }
 
   return <div className="bt-crud">
     <div className="bt-crud-heading"><div><p className="bt-section-kicker">PORTFOLIO / PROJECTS</p><h1>Construction projects</h1><p>Organization-scoped projects with live operational permissions.</p></div>
@@ -97,13 +103,14 @@ export function ProjectManager() {
         <div className="bt-crud-form-actions"><button type="button" onClick={() => setFormOpen(false)}>Cancel</button><button className="bt-crud-primary" disabled={saving} type="submit">{saving ? "Saving…" : editing ? "Save project" : "Create project"}</button></div>
       </form>
     </section>}
+    <ListControls mode="project" privateDatesAllowed={data?.canUsePrivateProjectFilters ?? true}/>
     <div className="bt-crud-panel">
       <div className="bt-crud-panel-head"><h2>Project portfolio</h2><span>{data ? `${data.total} records` : "Loading"}</span></div>
-      {loading ? <p className="bt-crud-empty">Loading authorized projects…</p> : !data?.items.length ? <p className="bt-crud-empty">No visible projects. An owner can create one; other users need an assigned operational role.</p> : <div className="bt-crud-table-wrap"><table className="bt-crud-table"><thead><tr><th scope="col">Project</th><th scope="col">Status</th><th scope="col">Location</th><th scope="col">Expected end</th><th scope="col">Actions</th></tr></thead>
+      {loading ? <p className="bt-crud-empty">Loading authorized projects…</p> : !data?.items.length ? <p className="bt-crud-empty">{query ? "No projects match these filters. Adjust or reset your search." : "No visible projects. An owner can create one; other users need an assigned operational role."}</p> : <div className="bt-crud-table-wrap"><table className="bt-crud-table"><thead><tr><th scope="col">Project</th><th scope="col">Status</th><th scope="col">Location</th><th scope="col">Expected end</th><th scope="col">Actions</th></tr></thead>
         <tbody>{data.items.map((project) => <tr key={project.id}><td><strong>{project.name}</strong><small>{project.code} {project.visibility === "summary" ? "· Summary access" : ""}</small></td>
           <td><span className="bt-crud-tag">{project.status.replaceAll("_", " ")}</span></td><td>{project.location ?? "Restricted"}</td><td>{project.expectedEndDate ?? "Restricted"}</td>
-          <td><div className="bt-crud-actions">{project.canEdit && <button type="button" onClick={() => openEdit(project)}>Edit</button>}{project.canArchive && <button type="button" onClick={() => void archive(project)}>Archive</button>}{project.visibility === "full" && <Link href="/dashboard/sites">Sites</Link>}</div></td></tr>)}</tbody></table></div>}
-      {data && data.total > data.limit && <div className="bt-crud-pagination"><button type="button" disabled={page <= 1 || loading} onClick={() => paginate(page - 1)}>Previous</button><span>Page {page} of {Math.ceil(data.total / data.limit)}</span><button type="button" disabled={page * data.limit >= data.total || loading} onClick={() => paginate(page + 1)}>Next</button></div>}
+          <td><div className="bt-crud-actions">{project.canEdit && <button type="button" onClick={() => openEdit(project)}>Edit</button>}{project.canArchive && <button type="button" onClick={() => void archive(project)}>Archive</button>}{project.visibility === "full" && <Link href={`/dashboard/sites?projectId=${encodeURIComponent(project.id)}`}>Sites</Link>}</div></td></tr>)}</tbody></table></div>}
+      {data && <ListPagination page={data.page} limit={data.limit} total={data.total} totalPages={data.totalPages}/>}
     </div>
   </div>;
 }

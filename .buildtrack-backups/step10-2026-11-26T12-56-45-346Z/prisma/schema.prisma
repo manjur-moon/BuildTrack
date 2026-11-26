@@ -1,0 +1,907 @@
+// BuildTrack | Step 4 schema baseline (Prisma ORM 7, PostgreSQL)
+// NOT MIGRATED: reconcile Better Auth generated identity models before any migration.
+// The Better Auth-compatible base models MUST be reconciled against
+// `npx auth@<pinned-version> generate` after the auth config is written in Step 5.
+// All application IDs are String IDs. IDs are not UUID columns deliberately:
+// Better Auth's default IDs are strings and compatible with cuid() defaults.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ProjectStatus {
+  PLANNED
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum SiteStatus {
+  PLANNED
+  ACTIVE
+  ON_HOLD
+  CLOSED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  COMPLETED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum MilestoneStatus {
+  PLANNED
+  ACHIEVED
+  MISSED
+  CANCELLED
+}
+
+enum ContractorStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum ExpenseStatus {
+  DRAFT
+  POSTED
+  VOIDED
+}
+
+enum MaterialUnit {
+  PIECE
+  BAG
+  KILOGRAM
+  TONNE
+  LITRE
+  METRE
+  SQUARE_METRE
+  CUBIC_METRE
+  BOX
+}
+
+enum MaterialRequestStatus {
+  PENDING
+  APPROVED
+  PARTIALLY_FULFILLED
+  FULFILLED
+  REJECTED
+  CANCELLED
+}
+
+enum StockMovementType {
+  RECEIPT
+  ISSUE
+  RETURN
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+}
+
+enum AttachmentStatus {
+  PENDING
+  READY
+  DELETED
+}
+
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_OVERDUE
+  PROJECT_DELAYED
+  BUDGET_OVERRUN
+  LOW_STOCK
+  MATERIAL_REQUEST
+  REPORT_SUBMITTED
+  SYSTEM
+}
+
+// --- Better Auth core identity tables (compatible baseline, subject to CLI diff) ---
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  memberships   Member[]
+  invitations   Invitation[] @relation("Inviter")
+
+  @@map("user")
+}
+
+model Session {
+  id                   String   @id @default(cuid())
+  expiresAt            DateTime
+  token                String   @unique
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  ipAddress            String?
+  userAgent            String?
+  userId               String
+  activeOrganizationId String?
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@unique([providerId, accountId])
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// --- Better Auth organization plugin (members are the scoped business actors) ---
+model Organization {
+  id                 String                 @id @default(cuid())
+  name               String
+  slug               String                 @unique
+  logo               String?
+  metadata           String?
+  createdAt          DateTime               @default(now())
+  members            Member[]
+  invitations        Invitation[]
+  settings           OrganizationSettings?
+  projects           Project[]
+  contractorCompanies ContractorCompany[]
+  idempotencyRecords IdempotencyRecord[]
+  expenseCategories  ExpenseCategory[]
+  materialCategories MaterialCategory[]
+  materials          Material[]
+  attachments        FileAttachment[]
+  notifications      Notification[]
+  auditEvents        AuditEvent[]
+
+  @@map("organization")
+}
+
+model Member {
+  businessRoleAssignments       OperationalRoleAssignment[] @relation("RoleAssignmentSubject")
+  businessRolesGranted         OperationalRoleAssignment[] @relation("RoleAssignmentGrantor")
+  businessRolesRevoked         OperationalRoleAssignment[] @relation("RoleAssignmentRevoker")
+  id                      String                          @id @default(cuid())
+  organizationId          String
+  userId                  String
+  role                    String                          @default("member") // BA roles are strings; restrict via Better Auth configuration.
+  createdAt               DateTime                        @default(now())
+  disabledAt              DateTime?                       // BuildTrack-owned nullable membership revocation field
+  organization            Organization                    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user                    User                            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  managedProjects         Project[]                       @relation("ProjectManager")
+  projectMemberships      ProjectMember[]
+  createdTasks            Task[]                          @relation("TaskCreator")
+  taskComments            TaskComment[]
+  taskStatusChanges       TaskStatusHistory[]
+  contractorUserLinks     ContractorUser[]
+  contractorAssignments   ProjectContractorAssignment[]
+  budgetApprovals         BudgetRevision[]
+  recordedExpenses        Expense[]                       @relation("ExpenseRecorder")
+  voidedExpenses          Expense[]                       @relation("ExpenseVoider")
+  materialRequests        MaterialRequest[]               @relation("MaterialRequester")
+  materialApprovals       MaterialRequest[]               @relation("MaterialApprover")
+  materialIssues          MaterialIssue[]
+  stockMovements          StockMovement[]
+  materialUsageReports    MaterialUsageRecord[]
+  progressReports         DailyProgressReport[]
+  uploadedAttachments     FileAttachment[]
+  notifications           Notification[]
+  auditEvents             AuditEvent[]
+
+  @@unique([organizationId, userId])
+  @@unique([organizationId, id]) // enforces same-org references in business models
+  @@index([userId])
+  @@index([organizationId, disabledAt])
+  @@map("member")
+}
+
+model Invitation {
+  id             String       @id @default(cuid())
+  organizationId String
+  email          String
+  role           String?
+  status         String       @default("pending")
+  expiresAt      DateTime
+  createdAt      DateTime     @default(now())
+  inviterId      String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  inviter        User         @relation("Inviter", fields: [inviterId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, email])
+  @@index([inviterId])
+  @@map("invitation")
+}
+
+model OrganizationSettings {
+  organizationId String       @id
+  currency       String       @default("BDT") @db.VarChar(3)
+  timeZone       String       @default("Asia/Dhaka")
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+}
+
+// --- Construction projects & site assignments ---
+model Project {
+  businessRoleAssignments       OperationalRoleAssignment[] @relation("RoleAssignmentProject")
+  id                  String                      @id @default(cuid())
+  organizationId      String
+  name                String
+  code                String
+  description         String?
+  location            String
+  startDate           DateTime                    @db.Date
+  expectedEndDate     DateTime                    @db.Date
+  actualEndDate       DateTime?                   @db.Date
+  status              ProjectStatus               @default(PLANNED)
+  managerMembershipId String?
+  archivedAt          DateTime?
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+  organization        Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  manager             Member?                     @relation("ProjectManager", fields: [organizationId, managerMembershipId], references: [organizationId, id], onDelete: Restrict)
+  members             ProjectMember[]
+  sites               ConstructionSite[]
+  milestones          Milestone[]
+  tasks               Task[]
+  contractors         ProjectContractorAssignment[]
+  budget              ProjectBudget?
+  expenses            Expense[]
+  requests            MaterialRequest[]
+  progressReports     DailyProgressReport[]
+  attachments         FileAttachment[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, code])
+  @@index([organizationId, status, expectedEndDate])
+  @@index([organizationId, managerMembershipId])
+  @@index([organizationId, archivedAt])
+  @@index([organizationId, archivedAt, createdAt(sort: Desc), id(sort: Desc)], map: "bt_project_listing_idx")
+  @@index([organizationId, archivedAt, status, createdAt(sort: Desc), id(sort: Desc)], map: "bt_project_status_listing_idx")
+}
+
+model ProjectMember {
+  id             String   @id @default(cuid())
+  organizationId String
+  projectId      String
+  membershipId   String
+  joinedAt       DateTime @default(now())
+  leftAt         DateTime?
+  siteAssignments SiteAssignment[]
+  taskAssignments TaskAssignment[]
+  project        Project  @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict)
+  member         Member   @relation(fields: [organizationId, membershipId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, projectId, membershipId])
+  @@index([organizationId, membershipId, leftAt])
+}
+
+model ConstructionSite {
+  businessRoleAssignments       OperationalRoleAssignment[] @relation("RoleAssignmentSite")
+  id             String           @id @default(cuid())
+  organizationId String
+  projectId      String
+  name           String
+  location       String
+  status         SiteStatus       @default(PLANNED)
+  archivedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  project        Project          @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict)
+  assignments    SiteAssignment[]
+  tasks          Task[]
+  inventories    SiteInventory[]
+  requests       MaterialRequest[]
+  progressReports DailyProgressReport[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, projectId, id])
+  @@index([organizationId, projectId, status])
+  @@index([organizationId, archivedAt, createdAt(sort: Desc), id(sort: Desc)], map: "bt_site_listing_idx")
+  @@index([organizationId, projectId, archivedAt, createdAt(sort: Desc), id(sort: Desc)], map: "bt_site_project_listing_idx")
+}
+
+model SiteAssignment {
+  id             String           @id @default(cuid())
+  organizationId String
+  projectId      String
+  siteId         String
+  membershipId   String
+  assignedAt     DateTime         @default(now())
+  endedAt        DateTime?
+  site           ConstructionSite @relation(fields: [organizationId, projectId, siteId], references: [organizationId, projectId, id], onDelete: Restrict)
+  projectMember  ProjectMember    @relation(fields: [organizationId, projectId, membershipId], references: [organizationId, projectId, membershipId], onDelete: Restrict)
+
+  @@unique([organizationId, siteId, membershipId])
+  @@index([organizationId, membershipId, endedAt])
+}
+
+model Milestone {
+  id             String          @id @default(cuid())
+  organizationId String
+  projectId      String
+  title          String
+  description    String?
+  dueDate        DateTime        @db.Date
+  achievedAt     DateTime?
+  status         MilestoneStatus @default(PLANNED)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  project        Project         @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict)
+
+  @@index([organizationId, projectId, dueDate])
+}
+
+// --- Work execution and dependency graph ---
+model Task {
+  id                   String              @id @default(cuid())
+  organizationId       String
+  projectId            String
+  siteId               String?
+  title                String
+  description          String?
+  status               TaskStatus          @default(TODO)
+  priority             TaskPriority        @default(MEDIUM)
+  progressPercent      Decimal             @default(0) @db.Decimal(5, 2)
+  startsOn             DateTime?           @db.Date
+  dueOn                DateTime            @db.Date
+  completedAt          DateTime?
+  createdByMembershipId String
+  archivedAt           DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  project              Project             @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict)
+  site                 ConstructionSite?   @relation(fields: [organizationId, projectId, siteId], references: [organizationId, projectId, id], onDelete: Restrict)
+  createdBy            Member              @relation("TaskCreator", fields: [organizationId, createdByMembershipId], references: [organizationId, id], onDelete: Restrict)
+  assignees            TaskAssignment[]
+  incomingDependencies TaskDependency[]    @relation("DependencySuccessor")
+  outgoingDependencies TaskDependency[]    @relation("DependencyPredecessor")
+  comments             TaskComment[]
+  history              TaskStatusHistory[]
+  progressReports      DailyProgressReport[]
+  attachments          FileAttachment[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, projectId, id])
+  @@index([organizationId, projectId, status, dueOn])
+  @@index([organizationId, siteId, dueOn])
+  @@index([organizationId, priority, dueOn])
+}
+
+model TaskAssignment {
+  id             String   @id @default(cuid())
+  organizationId String
+  projectId      String
+  taskId         String
+  membershipId   String
+  assignedAt     DateTime @default(now())
+  unassignedAt   DateTime?
+  task           Task     @relation(fields: [organizationId, projectId, taskId], references: [organizationId, projectId, id], onDelete: Restrict)
+  projectMember  ProjectMember @relation(fields: [organizationId, projectId, membershipId], references: [organizationId, projectId, membershipId], onDelete: Restrict)
+
+  @@unique([organizationId, taskId, membershipId])
+  @@index([organizationId, membershipId, unassignedAt])
+}
+
+model TaskDependency {
+  id                String   @id @default(cuid())
+  organizationId    String
+  projectId         String
+  predecessorTaskId String
+  successorTaskId   String
+  createdAt         DateTime @default(now())
+  predecessor       Task     @relation("DependencyPredecessor", fields: [organizationId, projectId, predecessorTaskId], references: [organizationId, projectId, id], onDelete: Restrict)
+  successor         Task     @relation("DependencySuccessor", fields: [organizationId, projectId, successorTaskId], references: [organizationId, projectId, id], onDelete: Restrict)
+
+  @@unique([organizationId, projectId, predecessorTaskId, successorTaskId])
+  @@index([organizationId, projectId, successorTaskId])
+}
+
+model TaskComment {
+  id                 String   @id @default(cuid())
+  organizationId     String
+  taskId             String
+  authorMembershipId String
+  body               String
+  createdAt          DateTime @default(now())
+  task               Task     @relation(fields: [organizationId, taskId], references: [organizationId, id], onDelete: Restrict)
+  author             Member   @relation(fields: [organizationId, authorMembershipId], references: [organizationId, id], onDelete: Restrict)
+
+  @@index([organizationId, taskId, createdAt])
+}
+
+model TaskStatusHistory {
+  id                String     @id @default(cuid())
+  organizationId    String
+  taskId            String
+  fromStatus        TaskStatus
+  toStatus          TaskStatus
+  actorMembershipId String
+  note              String?
+  changedAt         DateTime   @default(now())
+  task              Task       @relation(fields: [organizationId, taskId], references: [organizationId, id], onDelete: Restrict)
+  actor             Member     @relation(fields: [organizationId, actorMembershipId], references: [organizationId, id], onDelete: Restrict)
+
+  @@index([organizationId, taskId, changedAt])
+}
+
+// --- Contractors: businesses are not the same as login identities ---
+model ContractorCompany {
+  id             String           @id @default(cuid())
+  organizationId String
+  name           String
+  contactName    String?
+  phone          String?
+  email          String?
+  address        String?
+  status         ContractorStatus @default(ACTIVE)
+  notes          String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  users          ContractorUser[]
+  assignments    ProjectContractorAssignment[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, status, name])
+}
+
+model ContractorUser {
+  id                String            @id @default(cuid())
+  organizationId    String
+  contractorId      String
+  membershipId      String
+  createdAt         DateTime          @default(now())
+  endedAt           DateTime?
+  company           ContractorCompany @relation(fields: [organizationId, contractorId], references: [organizationId, id], onDelete: Restrict)
+  member            Member            @relation(fields: [organizationId, membershipId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, membershipId]) // one contractor-company affiliation per organization (v1)
+  @@index([organizationId, contractorId])
+}
+
+model ProjectContractorAssignment {
+  id                     String            @id @default(cuid())
+  organizationId         String
+  projectId              String
+  contractorId           String
+  assignedByMembershipId String
+  assignedAt             DateTime          @default(now())
+  endedAt                DateTime?
+  project                Project           @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict)
+  contractor             ContractorCompany @relation(fields: [organizationId, contractorId], references: [organizationId, id], onDelete: Restrict)
+  assignedBy             Member            @relation(fields: [organizationId, assignedByMembershipId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, projectId, contractorId])
+  @@index([organizationId, contractorId, endedAt])
+}
+
+// --- Financial ledger / posted expenses ---
+model ProjectBudget {
+  id             String           @id @default(cuid())
+  organizationId String
+  projectId      String
+  initialAmount  Decimal          @db.Decimal(18, 2)
+  approvedAmount Decimal          @db.Decimal(18, 2)
+  currency       String           @default("BDT") @db.VarChar(3)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  project        Project          @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict)
+  revisions      BudgetRevision[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, projectId])
+}
+
+model BudgetRevision {
+  id                     String        @id @default(cuid())
+  organizationId         String
+  budgetId               String
+  revisionNumber         Int
+  previousAmount         Decimal       @db.Decimal(18, 2)
+  newAmount              Decimal       @db.Decimal(18, 2)
+  reason                 String
+  approvedByMembershipId String
+  approvedAt             DateTime      @default(now())
+  budget                 ProjectBudget @relation(fields: [organizationId, budgetId], references: [organizationId, id], onDelete: Restrict)
+  approvedBy             Member        @relation(fields: [organizationId, approvedByMembershipId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, budgetId, revisionNumber])
+  @@index([organizationId, approvedAt])
+}
+
+model ExpenseCategory {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  archivedAt     DateTime?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  expenses       Expense[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, name])
+}
+
+model Expense {
+  id                     String         @id @default(cuid())
+  organizationId         String
+  projectId              String
+  categoryId             String
+  title                  String
+  description            String?
+  amount                 Decimal        @db.Decimal(18, 2)
+  expenseDate            DateTime       @db.Date
+  status                 ExpenseStatus  @default(DRAFT)
+  recordedByMembershipId String
+  postedAt               DateTime?
+  voidedAt               DateTime?
+  voidedByMembershipId   String?
+  voidReason             String?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  project                Project        @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict)
+  category               ExpenseCategory @relation(fields: [organizationId, categoryId], references: [organizationId, id], onDelete: Restrict)
+  recordedBy             Member         @relation("ExpenseRecorder", fields: [organizationId, recordedByMembershipId], references: [organizationId, id], onDelete: Restrict)
+  voidedBy               Member?        @relation("ExpenseVoider", fields: [organizationId, voidedByMembershipId], references: [organizationId, id], onDelete: Restrict)
+  attachments            FileAttachment[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, projectId, status, expenseDate])
+  @@index([organizationId, categoryId, expenseDate])
+}
+
+// --- Material catalog & transactional stock ---
+model MaterialCategory {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  materials      Material[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, name])
+}
+
+model Material {
+  id             String           @id @default(cuid())
+  organizationId String
+  categoryId     String
+  sku            String
+  name           String
+  unit           MaterialUnit
+  archivedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  category       MaterialCategory @relation(fields: [organizationId, categoryId], references: [organizationId, id], onDelete: Restrict)
+  inventories    SiteInventory[]
+  requestItems   MaterialRequestItem[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, sku])
+  @@index([organizationId, categoryId, name])
+}
+
+model SiteInventory {
+  id             String           @id @default(cuid())
+  organizationId String
+  siteId         String
+  materialId     String
+  onHand         Decimal          @default(0) @db.Decimal(18, 3)
+  reorderLevel   Decimal          @default(0) @db.Decimal(18, 3)
+  updatedAt      DateTime         @updatedAt
+  site           ConstructionSite @relation(fields: [organizationId, siteId], references: [organizationId, id], onDelete: Restrict)
+  material       Material         @relation(fields: [organizationId, materialId], references: [organizationId, id], onDelete: Restrict)
+  movements      StockMovement[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, siteId, materialId])
+  @@index([organizationId, materialId])
+}
+
+model MaterialRequest {
+  id                      String                @id @default(cuid())
+  organizationId          String
+  projectId               String
+  siteId                  String
+  requestedByMembershipId String
+  approvedByMembershipId  String?
+  status                  MaterialRequestStatus @default(PENDING)
+  reason                  String?
+  requestedAt             DateTime              @default(now())
+  approvedAt              DateTime?
+  closedAt                DateTime?
+  site                    ConstructionSite      @relation(fields: [organizationId, projectId, siteId], references: [organizationId, projectId, id], onDelete: Restrict)
+  project                 Project               @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict)
+  requestedBy             Member                @relation("MaterialRequester", fields: [organizationId, requestedByMembershipId], references: [organizationId, id], onDelete: Restrict)
+  approvedBy              Member?               @relation("MaterialApprover", fields: [organizationId, approvedByMembershipId], references: [organizationId, id], onDelete: Restrict)
+  items                   MaterialRequestItem[]
+  issues                  MaterialIssue[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, projectId, siteId, id])
+  @@index([organizationId, projectId, status, requestedAt])
+  @@index([organizationId, requestedByMembershipId, requestedAt])
+}
+
+model MaterialRequestItem {
+  id               String                @id @default(cuid())
+  organizationId   String
+  requestId        String
+  materialId       String
+  quantityRequested Decimal              @db.Decimal(18, 3)
+  quantityApproved Decimal?              @db.Decimal(18, 3)
+  request          MaterialRequest       @relation(fields: [organizationId, requestId], references: [organizationId, id], onDelete: Restrict)
+  material         Material              @relation(fields: [organizationId, materialId], references: [organizationId, id], onDelete: Restrict)
+  issuedItems      MaterialIssueItem[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, requestId, id])
+  @@unique([organizationId, requestId, materialId])
+  @@index([organizationId, materialId])
+}
+
+model MaterialIssue {
+  id                    String           @id @default(cuid())
+  organizationId        String
+  projectId             String
+  siteId                String
+  requestId             String
+  issuedByMembershipId  String
+  issuedAt              DateTime         @default(now())
+  idempotencyKey        String
+  request               MaterialRequest  @relation(fields: [organizationId, projectId, siteId, requestId], references: [organizationId, projectId, siteId, id], onDelete: Restrict)
+  issuedBy              Member           @relation(fields: [organizationId, issuedByMembershipId], references: [organizationId, id], onDelete: Restrict)
+  items                 MaterialIssueItem[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, requestId, id])
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, requestId, issuedAt])
+}
+
+model MaterialIssueItem {
+  id                String              @id @default(cuid())
+  organizationId    String
+  requestId         String
+  issueId           String
+  requestItemId     String
+  quantity          Decimal             @db.Decimal(18, 3)
+  consumedQuantity  Decimal             @default(0) @db.Decimal(18, 3)
+  issue             MaterialIssue       @relation(fields: [organizationId, requestId, issueId], references: [organizationId, requestId, id], onDelete: Restrict)
+  requestItem       MaterialRequestItem @relation(fields: [organizationId, requestId, requestItemId], references: [organizationId, requestId, id], onDelete: Restrict)
+  movement          StockMovement? @relation("StockIssue")
+  usageRecords      MaterialUsageRecord[]
+  returnMovements   StockMovement[] @relation("ReturnOfIssue")
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, issueId, requestItemId])
+  @@index([organizationId, requestItemId])
+}
+
+model StockMovement {
+  id                       String            @id @default(cuid())
+  organizationId           String
+  inventoryId              String
+  type                     StockMovementType
+  // Signed quantity delta: + RECEIPT/RETURN/ADJUSTMENT_IN, - ISSUE/ADJUSTMENT_OUT
+  quantityDelta            Decimal           @db.Decimal(18, 3)
+  issueItemId              String?           // Composite uniqueness below matches the relation FK
+  returnOfIssueItemId      String?
+  idempotencyKey           String
+  reason                   String?
+  performedByMembershipId  String
+  recordedAt               DateTime          @default(now())
+  inventory                SiteInventory     @relation(fields: [organizationId, inventoryId], references: [organizationId, id], onDelete: Restrict)
+  issueItem                MaterialIssueItem? @relation("StockIssue", fields: [organizationId, issueItemId], references: [organizationId, id], onDelete: Restrict)
+  returnOfIssue            MaterialIssueItem? @relation("ReturnOfIssue", fields: [organizationId, returnOfIssueItemId], references: [organizationId, id], onDelete: Restrict)
+  performedBy              Member            @relation(fields: [organizationId, performedByMembershipId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, idempotencyKey])
+  @@unique([organizationId, issueItemId]) // One ISSUE stock movement per issue line per organization
+  @@index([organizationId, inventoryId, recordedAt])
+  @@index([organizationId, returnOfIssueItemId])
+  @@index([organizationId, type, recordedAt])
+}
+
+model MaterialUsageRecord {
+  id                     String            @id @default(cuid())
+  organizationId         String
+  issueItemId            String
+  reportId               String?
+  quantity               Decimal           @db.Decimal(18, 3)
+  recordedByMembershipId String
+  usedAt                 DateTime          @default(now())
+  note                   String?
+  issueItem              MaterialIssueItem @relation(fields: [organizationId, issueItemId], references: [organizationId, id], onDelete: Restrict)
+  report                 DailyProgressReport? @relation(fields: [organizationId, reportId], references: [organizationId, id], onDelete: Restrict)
+  recordedBy             Member            @relation(fields: [organizationId, recordedByMembershipId], references: [organizationId, id], onDelete: Restrict)
+
+  @@index([organizationId, issueItemId, usedAt])
+  @@index([organizationId, reportId])
+}
+
+// --- Daily site reporting, documents, alerts and durable audit ---
+model DailyProgressReport {
+  id                     String              @id @default(cuid())
+  organizationId         String
+  projectId              String
+  siteId                 String
+  taskId                 String?
+  reportedByMembershipId String
+  workDate               DateTime            @db.Date
+  observedProgress       Decimal?            @db.Decimal(5, 2)
+  workDescription        String
+  delayReason            String?
+  submittedAt            DateTime            @default(now())
+  project                Project             @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict)
+  site                   ConstructionSite    @relation(fields: [organizationId, projectId, siteId], references: [organizationId, projectId, id], onDelete: Restrict)
+  task                   Task?               @relation(fields: [organizationId, projectId, taskId], references: [organizationId, projectId, id], onDelete: Restrict)
+  reportedBy             Member              @relation(fields: [organizationId, reportedByMembershipId], references: [organizationId, id], onDelete: Restrict)
+  attachments            FileAttachment[]
+  usageRecords           MaterialUsageRecord[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, projectId, siteId, workDate])
+  @@index([organizationId, reportedByMembershipId, workDate])
+}
+
+model FileAttachment {
+  id                     String           @id @default(cuid())
+  organizationId         String
+  projectId              String?
+  taskId                 String?
+  expenseId              String?
+  reportId               String?
+  uploadedByMembershipId String
+  objectKey              String           @unique
+  originalName           String
+  mimeType               String
+  byteSize               BigInt
+  status                 AttachmentStatus @default(PENDING)
+  createdAt              DateTime         @default(now())
+  deletedAt              DateTime?
+  organization           Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  project                Project?         @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict)
+  task                   Task?            @relation(fields: [organizationId, taskId], references: [organizationId, id], onDelete: Restrict)
+  expense                Expense?         @relation(fields: [organizationId, expenseId], references: [organizationId, id], onDelete: Restrict)
+  report                 DailyProgressReport? @relation(fields: [organizationId, reportId], references: [organizationId, id], onDelete: Restrict)
+  uploadedBy             Member           @relation(fields: [organizationId, uploadedByMembershipId], references: [organizationId, id], onDelete: Restrict)
+
+  @@index([organizationId, projectId])
+  @@index([organizationId, taskId])
+  @@index([organizationId, expenseId])
+  @@index([organizationId, reportId])
+}
+
+model Notification {
+  id                    String           @id @default(cuid())
+  organizationId        String
+  recipientMembershipId String
+  type                  NotificationType
+  title                 String
+  body                  String
+  // Internal navigation target, never an external arbitrary URL.
+  resourceType          String?
+  resourceId            String?
+  readAt                DateTime?
+  createdAt             DateTime         @default(now())
+  organization          Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  recipient             Member           @relation(fields: [organizationId, recipientMembershipId], references: [organizationId, id], onDelete: Restrict)
+
+  @@index([organizationId, recipientMembershipId, readAt, createdAt])
+}
+
+model AuditEvent {
+  id                String       @id @default(cuid())
+  organizationId    String
+  actorMembershipId String?
+  action            String
+  resourceType      String
+  resourceId        String
+  before            Json?
+  after             Json?
+  ipAddress         String?
+  requestId         String?
+  createdAt         DateTime     @default(now())
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actor             Member?      @relation(fields: [organizationId, actorMembershipId], references: [organizationId, id], onDelete: Restrict)
+
+  @@index([organizationId, resourceType, resourceId, createdAt])
+  @@index([organizationId, actorMembershipId, createdAt])
+}
+
+// Step 3 approved amendment: durable operation replay and request fingerprints.
+// API services MUST lock/insert this row in the same transaction as business writes.
+model IdempotencyRecord {
+  id             String       @id @default(cuid())
+  organizationId String
+  operation      String       @db.VarChar(100)
+  requestKey     String       @db.VarChar(128)
+  requestHash    String       @db.VarChar(64) // SHA-256 canonical request fingerprint
+  status         String       @default("PROCESSING") @db.VarChar(20)
+  responseStatus Int?
+  responseBody   Json?
+  createdAt      DateTime     @default(now())
+  completedAt    DateTime?
+  expiresAt      DateTime
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, operation, requestKey])
+  @@index([expiresAt])
+  @@index([organizationId, createdAt])
+}
+
+// Step 6B: business role grants are NOT Better Auth's member.role.
+// SQL migration enforces permitted role/scope combinations and active uniqueness.
+model OperationalRoleAssignment {
+  id                      String   @id @default(cuid())
+  organizationId          String
+  membershipId            String
+  grantedByMembershipId   String
+  role                    String   @db.VarChar(32)
+  scope                   String   @db.VarChar(16)
+  projectId               String?
+  siteId                  String?
+  grantedAt               DateTime @default(now())
+  expiresAt               DateTime?
+  revokedAt               DateTime?
+  revokedByMembershipId   String?
+  member                  Member   @relation("RoleAssignmentSubject", fields: [organizationId, membershipId], references: [organizationId, id], onDelete: Restrict)
+  grantedBy               Member   @relation("RoleAssignmentGrantor", fields: [organizationId, grantedByMembershipId], references: [organizationId, id], onDelete: Restrict)
+  revokedBy               Member?  @relation("RoleAssignmentRevoker", fields: [organizationId, revokedByMembershipId], references: [organizationId, id], onDelete: Restrict)
+  project                 Project? @relation("RoleAssignmentProject", fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict)
+  site                    ConstructionSite? @relation("RoleAssignmentSite", fields: [organizationId, projectId, siteId], references: [organizationId, projectId, id], onDelete: Restrict)
+
+  // Active-grant uniqueness; revoked rows are retained for audit.
+  @@unique([organizationId, membershipId, role], map: "ora_unique_active_org", where: raw("\"scope\" = 'ORGANIZATION' AND \"revokedAt\" IS NULL"))
+  @@unique([organizationId, membershipId, projectId, role], map: "ora_unique_active_project", where: raw("\"scope\" = 'PROJECT' AND \"revokedAt\" IS NULL"))
+  @@unique([organizationId, membershipId, projectId, siteId, role], map: "ora_unique_active_site", where: raw("\"scope\" = 'SITE' AND \"revokedAt\" IS NULL"))
+  @@index([organizationId, membershipId, revokedAt], map: "ora_member_state_idx")
+  @@index([organizationId, projectId, revokedAt], map: "ora_project_state_idx")
+  @@index([organizationId, siteId, revokedAt], map: "ora_site_state_idx")
+  @@index([organizationId, grantedByMembershipId, grantedAt], map: "ora_grantor_idx")
+  @@map("operational_role_assignment")
+}

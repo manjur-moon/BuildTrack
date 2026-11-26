@@ -1,4 +1,4 @@
-import { prisma } from "@/server/db/client";
+﻿import { prisma } from "@/server/db/client";
 import { ApiError } from "@/server/api/errors";
 import { hasPermission, type AuthorizationContext } from "@/server/rbac/policy";
 import type { CreateProjectInput, UpdateProjectInput } from "./input";
@@ -6,6 +6,9 @@ import { checkProjectDates } from "./input";
 import { assertCurrentWriteAccess } from "./write-access";
 import { canCreateProject, canReadProject, projectReadScope } from "./scope";
 import { idempotentCreate } from "./idempotency";
+import type { ProjectListQuery } from "./list-query";
+import { projectListFilter, projectListOrder, listMeta } from "./list-query";
+import type { Prisma } from "@/generated/prisma/client";
 import { requireLiveProjectLock, rethrowConstructionConflict } from "./locking";
 
 const date = (value: string) => new Date(`${value}T00:00:00.000Z`);
@@ -36,20 +39,38 @@ function projectDto(row: NonNullable<ProjectRow>, visibility: "full" | "summary"
   };
 }
 
-export async function listProjects(actor: AuthorizationContext, page: number, limit: number) {
+export async function listProjects(actor: AuthorizationContext, query: ProjectListQuery) {
+  const { page, limit } = query;
   const scope = projectReadScope(actor);
-  if (!scope.all && scope.projectIds.length === 0) return { items: [], page, limit, total: 0, canCreate: canCreateProject(actor) };
-  const where = { organizationId: actor.organizationId, archivedAt: null,
-    ...(!scope.all ? { id: { in: scope.projectIds } } : {}) };
+  if (!scope.all && scope.projectIds.length === 0) {
+    return { items: [], ...listMeta(page, limit, 0), canCreate: canCreateProject(actor), canUsePrivateProjectFilters: false };
+  }
+  // Summary-only actors must not learn hidden project dates through filter counts or sort order.
+  const canUsePrivateProjectFilters = scope.all
+    ? hasPermission(actor, "project:view", { organizationId: actor.organizationId, projectId: "__list_project_scope_probe__" })
+    : scope.projectIds.every((projectId) => hasPermission(actor, "project:view", {
+      organizationId: actor.organizationId, projectId,
+    }));
+  if (!canUsePrivateProjectFilters && (query.from || query.to ||
+      query.sortBy === "startDate" || query.sortBy === "expectedEndDate")) {
+    throw new ApiError(403, "FORBIDDEN", "Project date filters and date sorting require full project access.");
+  }
+  // Both authorization and tenant predicates are applied in SQL BEFORE skip/take/count.
+  // Summary-only actors can search project name/code, not restricted location/description.
+  const where: Prisma.ProjectWhereInput = {
+    organizationId: actor.organizationId, archivedAt: null,
+    ...(!scope.all ? { id: { in: scope.projectIds } } : {}),
+    ...projectListFilter(query),
+  };
   const [rows, total] = await Promise.all([
-    prisma.project.findMany({ where, select: projectSelect, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * limit, take: limit }),
+    prisma.project.findMany({ where, select: projectSelect, orderBy: projectListOrder(query), skip: (page - 1) * limit, take: limit }),
     prisma.project.count({ where }),
   ]);
   const items = rows.flatMap((row) => {
     const visibility = canReadProject(actor, { organizationId: row.organizationId, projectId: row.id });
     return visibility ? [projectDto(row, visibility, actor)] : [];
   });
-  return { items, page, limit, total, canCreate: canCreateProject(actor) };
+  return { items, ...listMeta(page, limit, total), canCreate: canCreateProject(actor), canUsePrivateProjectFilters };
 }
 
 export async function getProject(actor: AuthorizationContext, projectId: string) {
@@ -149,3 +170,4 @@ export async function archiveProject(actor: AuthorizationContext, id: string, ex
 export function isUnique(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
 }
+

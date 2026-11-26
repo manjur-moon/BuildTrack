@@ -1,4 +1,4 @@
-export type Page<T> = { items: T[]; page: number; limit: number; total: number; canCreate?: boolean };
+export type Page<T> = { items: T[]; page: number; limit: number; total: number; totalPages: number; hasPrevious: boolean; hasNext: boolean; canUsePrivateProjectFilters?: boolean; canCreate?: boolean };
 export type Project = {
   id: string; name: string; code: string; status: string; visibility: "full" | "summary";
   canEdit: boolean; canArchive: boolean; description?: string | null; location?: string;

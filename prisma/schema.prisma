@@ -298,6 +298,8 @@ model Project {
   @@index([organizationId, status, expectedEndDate])
   @@index([organizationId, managerMembershipId])
   @@index([organizationId, archivedAt])
+  @@index([organizationId, archivedAt, createdAt(sort: Desc), id(sort: Desc)], map: "bt_project_listing_idx")
+  @@index([organizationId, archivedAt, status, createdAt(sort: Desc), id(sort: Desc)], map: "bt_project_status_listing_idx")
 }
 
 model ProjectMember {
@@ -333,10 +335,13 @@ model ConstructionSite {
   inventories    SiteInventory[]
   requests       MaterialRequest[]
   progressReports DailyProgressReport[]
+  attachments    FileAttachment[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, projectId, id])
   @@index([organizationId, projectId, status])
+  @@index([organizationId, archivedAt, createdAt(sort: Desc), id(sort: Desc)], map: "bt_site_listing_idx")
+  @@index([organizationId, projectId, archivedAt, createdAt(sort: Desc), id(sort: Desc)], map: "bt_site_project_listing_idx")
 }
 
 model SiteAssignment {
@@ -788,6 +793,7 @@ model FileAttachment {
   id                     String           @id @default(cuid())
   organizationId         String
   projectId              String?
+  siteId                 String?
   taskId                 String?
   expenseId              String?
   reportId               String?
@@ -801,12 +807,14 @@ model FileAttachment {
   deletedAt              DateTime?
   organization           Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   project                Project?         @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict)
+  site                   ConstructionSite? @relation(fields: [organizationId, projectId, siteId], references: [organizationId, projectId, id], onDelete: Restrict)
   task                   Task?            @relation(fields: [organizationId, taskId], references: [organizationId, id], onDelete: Restrict)
   expense                Expense?         @relation(fields: [organizationId, expenseId], references: [organizationId, id], onDelete: Restrict)
   report                 DailyProgressReport? @relation(fields: [organizationId, reportId], references: [organizationId, id], onDelete: Restrict)
   uploadedBy             Member           @relation(fields: [organizationId, uploadedByMembershipId], references: [organizationId, id], onDelete: Restrict)
 
   @@index([organizationId, projectId])
+  @@index([organizationId, projectId, siteId, status, createdAt(sort: Desc)], map: "idx_media_org_project_site_status_time")
   @@index([organizationId, taskId])
   @@index([organizationId, expenseId])
   @@index([organizationId, reportId])

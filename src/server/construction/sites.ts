@@ -1,10 +1,13 @@
-import { ApiError } from "@/server/api/errors";
+﻿import { ApiError } from "@/server/api/errors";
 import { prisma } from "@/server/db/client";
 import { hasPermission, type AuthorizationContext } from "@/server/rbac/policy";
 import type { CreateSiteInput, UpdateSiteInput } from "./input";
 import { assertCurrentWriteAccess } from "./write-access";
 import { canCreateSite, siteReadScope } from "./scope";
 import { idempotentCreate } from "./idempotency";
+import type { SiteListQuery } from "./list-query";
+import { siteListFilter, siteListOrder, listMeta } from "./list-query";
+import type { Prisma } from "@/generated/prisma/client";
 import { requireLiveProjectLock, lockSiteRow, rethrowConstructionConflict } from "./locking";
 
 const siteSelect = { id: true, organizationId: true, projectId: true, name: true, location: true,
@@ -22,23 +25,29 @@ function dto(row: SiteRow, actor: AuthorizationContext) {
   };
 }
 
-export async function listSites(actor: AuthorizationContext, page: number, limit: number) {
+export async function listSites(actor: AuthorizationContext, query: SiteListQuery) {
+  const { page, limit } = query;
   const scope = siteReadScope(actor);
-  if (!scope.all && !scope.siteIds.length && !scope.projectIds.length) return { items: [], page, limit, total: 0 };
-  const where = { organizationId: actor.organizationId, archivedAt: null,
-    project: { is: { archivedAt: null } },
+  if (!scope.all && !scope.siteIds.length && !scope.projectIds.length) {
+    return { items: [], ...listMeta(page, limit, 0) };
+  }
+  const where: Prisma.ConstructionSiteWhereInput = {
+    organizationId: actor.organizationId, archivedAt: null,
+    project: { is: { organizationId: actor.organizationId, archivedAt: null } },
     ...(!scope.all ? { OR: [
       ...(scope.projectIds.length ? [{ projectId: { in: scope.projectIds } }] : []),
       ...(scope.siteIds.length ? [{ id: { in: scope.siteIds } }] : []),
     ] } : {}),
+    // Search/filter OR is combined via AND to avoid replacing the access-scope OR.
+    AND: [siteListFilter(query)],
   };
   const [rows, total] = await Promise.all([
-    prisma.constructionSite.findMany({ where, select: siteSelect, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * limit, take: limit }),
+    prisma.constructionSite.findMany({ where, select: siteSelect, orderBy: siteListOrder(query), skip: (page - 1) * limit, take: limit }),
     prisma.constructionSite.count({ where }),
   ]);
   return { items: rows.filter((row) => hasPermission(actor, "site:view", {
     organizationId: row.organizationId, projectId: row.projectId, siteId: row.id,
-  })).map((row) => dto(row, actor)), page, limit, total };
+  })).map((row) => dto(row, actor)), ...listMeta(page, limit, total) };
 }
 
 export async function getSite(actor: AuthorizationContext, siteId: string) {
@@ -144,3 +153,4 @@ export async function archiveSite(actor: AuthorizationContext, siteId: string, e
     return { id: siteId, archived: true };
   }).catch(rethrowConstructionConflict);
 }
+

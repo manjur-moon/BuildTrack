@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { parsePagination } from "@/server/api/pagination";
+import { parseProjectListQuery } from "@/server/construction/list-query";
 import { errorResponse, ok } from "@/server/api/response";
 import { parseJson } from "@/server/api/validation";
 import { requireAuthorizationContext } from "@/server/rbac/require";
@@ -14,8 +14,8 @@ export async function GET(request: NextRequest) {
   const requestId = crypto.randomUUID();
   try {
     const actor = await requireAuthorizationContext(request.headers);
-    const { page, limit } = parsePagination(request.nextUrl.searchParams);
-    return ok(await listProjects(actor, page, limit), { requestId });
+    const query = parseProjectListQuery(request.nextUrl.searchParams);
+    return ok(await listProjects(actor, query), { requestId });
   } catch (error) { return errorResponse(error, requestId); }
 }
 export async function POST(request: NextRequest) {
