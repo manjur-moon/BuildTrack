@@ -1,0 +1,16 @@
+.bt-live-metric .bt-metric-value { font-size: clamp(24px, 3vw, 42px); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.bt-analytics-panel { border: 1px solid var(--bt-line); padding: 20px; margin-top: 16px; }
+.bt-analytics-panel h3 { font-size: 18px; font-weight: 600; margin: 0 0 6px; }
+.bt-analytics-panel p { font-size: 12px; color: var(--bt-subtle); margin: 0 0 16px; }
+.bt-analytics-table { overflow-x: auto; }
+.bt-analytics-table table { border-collapse: collapse; width: 100%; font-size: 13px; text-align: left; }
+.bt-analytics-table td,.bt-analytics-table th { padding: 12px; border-bottom: 1px solid var(--bt-line); }
+.bt-analytics-table th { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.bt-progress-cell { display: flex; align-items: center; gap: 8px; min-width: 130px; font-variant-numeric: tabular-nums; }
+.bt-progress-cell progress { width: 90px; accent-color: currentColor; }
+.bt-trend { display: grid; gap: 10px; }
+.bt-trend-row { display: grid; grid-template-columns: 75px minmax(20px,1fr) minmax(100px,auto); align-items: center; gap: 12px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.bt-trend-row strong { text-align: right; overflow-wrap: anywhere; }
+.bt-trend-track { background: var(--bt-line); height: 12px; }
+.bt-trend-track > div { height: 100%; background: currentColor; }
+@media(max-width:520px) { .bt-analytics-panel { padding: 12px; } .bt-trend-row { grid-template-columns: 65px minmax(12px,1fr); } .bt-trend-row strong { grid-column:2; } }
