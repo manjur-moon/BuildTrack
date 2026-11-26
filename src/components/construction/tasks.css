@@ -1,0 +1,43 @@
+ .bt-task-summary { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin:24px 0; }
+.bt-task-summary > div { border:1px solid var(--bt-line); padding:17px 14px; background:var(--bt-surface); min-width:0; }
+.bt-task-summary small { display:block; font-size:11px; color:var(--bt-subtle); margin-bottom:10px; }
+.bt-task-summary strong { display:block; font-size:28px; font-weight:650; letter-spacing:-.05em; }
+@media(max-width:900px) { .bt-task-summary { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(max-width:560px) { .bt-task-summary { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+/* Step 11 inherits the two-color Step 7 theme. No new brand color. */
+.bt-task-page { --bt-task-rule: var(--bt-line); }
+.bt-task-filters { grid-template-columns: repeat(4,minmax(0,1fr)); }
+.bt-task-table .bt-task-progress { width: 110px; height: 7px; background: var(--bt-line); overflow:hidden; margin: 0 0 6px; }
+.bt-task-table .bt-task-progress span { display:block; height:100%; background:var(--bt-fg); }
+.bt-task-plain { border:0; background:transparent; color:var(--bt-fg); text-decoration:underline; text-underline-offset:4px; font-size:12px; font-weight:650; cursor:pointer; padding:8px; }
+.bt-task-detail .bt-crud-panel-head h2 { max-width:54ch; }
+.bt-task-detail-body { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr); }
+.bt-task-detail-main, .bt-task-detail-side { padding:24px; min-width:0; }
+.bt-task-detail-main { border-right:1px solid var(--bt-line); }
+.bt-task-detail-side h3, .bt-task-progress-form h3 { font-size:15px; font-weight:650; margin:0 0 16px; }
+.bt-task-detail-side h3:not(:first-child) { margin-top:29px; }
+.bt-task-facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:0 0 24px; }
+.bt-task-facts div { border:1px solid var(--bt-line); padding:12px; }
+.bt-task-facts dt { font-size:10px; color:var(--bt-subtle); margin-bottom:6px; }
+.bt-task-facts dd { font-size:13px; font-weight:650; margin:0; }
+.bt-task-description { white-space:pre-wrap; font-size:13px; line-height:1.75; }
+.bt-task-inline-actions { display:flex; gap:14px; padding:15px 0 24px; }
+.bt-task-inline-actions button, .bt-task-assignee button, .bt-task-add button, .bt-task-picker button { border:1px solid var(--bt-line); padding:9px 12px; background:transparent; color:var(--bt-fg); cursor:pointer; font:inherit; font-size:12px; }
+.bt-task-progress-form { padding-top:20px; border-top:1px solid var(--bt-line); display:flex; flex-direction:column; gap:14px; }
+.bt-task-fields { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.bt-task-progress-form label, .bt-task-add label, .bt-task-picker label { display:flex; flex-direction:column; gap:7px; font-size:12px; font-weight:650; }
+.bt-task-progress-form :is(input,select,textarea), .bt-task-add select, .bt-task-picker input { background:var(--bt-bg); color:var(--bt-fg); border:1px solid var(--bt-line); padding:10px 12px; min-height:42px; max-width:100%; font:inherit; }
+.bt-task-progress-form button { align-self:flex-start; }
+.bt-task-progress-form p, .bt-task-detail-side p { color:var(--bt-subtle); font-size:12px; line-height:1.6; }
+.bt-task-assignee { display:flex; justify-content:space-between; gap:10px; align-items:center; border-bottom:1px solid var(--bt-line); padding:10px 0; font-size:12px; }
+.bt-task-add { display:flex; flex-direction:column; gap:12px; padding-top:16px; }
+.bt-task-history { margin:0; padding:0; list-style:none; }
+.bt-task-history li { border-left:2px solid var(--bt-fg); padding:0 0 19px 12px; font-size:12px; }
+.bt-task-history strong, .bt-task-history small { display:block; }
+.bt-task-history small { margin-top:5px; color:var(--bt-subtle); }
+.bt-task-history li p { margin-bottom:0; }
+.bt-task-picker { display:flex; gap:12px; align-items:flex-end; }
+.bt-task-picker label { flex:1; }
+.bt-task-page button:focus-visible, .bt-task-page a:focus-visible { outline:2px solid var(--bt-fg); outline-offset:2px; }
+@media(max-width:1100px) { .bt-task-detail-body { grid-template-columns:1fr; } .bt-task-detail-main { border-right:0; border-bottom:1px solid var(--bt-line); } .bt-task-filters { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:680px) { .bt-task-detail-main,.bt-task-detail-side { padding:16px; } .bt-task-facts { grid-template-columns:repeat(2,minmax(0,1fr)); } .bt-task-fields { grid-template-columns:1fr; } .bt-task-filters { grid-template-columns:1fr; } }
