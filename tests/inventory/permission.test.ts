@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { hasPermission, type AuthorizationContext } from "@/server/rbac/policy";
-import { canViewInventory, canManageCatalog, scopedInventoryWhere } from "@/server/inventory/access";
+import { canViewInventory, canManageCatalog, scopedInventoryWhere } from "@/server/inventory/permissions";
 
 const actor = (role: "owner" | "member", grant?: AuthorizationContext["grants"][number]): AuthorizationContext => ({
   organizationId: "org-A", membershipId: "m1", membershipActive: true, emailVerified: true,
@@ -31,6 +31,16 @@ describe("Step 12 — RBAC matrix and scope", () => {
     expect(canViewInventory(a)).toBe(true);
     expect(scopedInventoryWhere(a)).toMatchObject({ organizationId: "org-A", OR: [{ projectId: { in: [] } }, { id: { in: ["s-A"] } }] });
     expect(canViewInventory(actor("member"))).toBe(false);
+  });
+  it("does not expand project or foreign-organization grants", () => {
+    expect(scopedInventoryWhere(actor("member", pmGrant))).toMatchObject({
+      organizationId: "org-A", OR: [{ projectId: { in: ["p-A"] } }, { id: { in: [] } }],
+    });
+    const foreign = actor("member", { ...siteGrant, organizationId: "org-B" });
+    expect(canViewInventory(foreign)).toBe(false);
+    expect(scopedInventoryWhere(foreign)).toMatchObject({
+      organizationId: "org-A", OR: [{ projectId: { in: [] } }, { id: { in: [] } }],
+    });
   });
   it("disabled or unverified actors cannot access inventory", () => {
     expect(canViewInventory({ ...actor("owner"), emailVerified: false })).toBe(false);

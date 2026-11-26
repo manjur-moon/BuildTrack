@@ -55,14 +55,17 @@ export async function createRequest(actor: AuthorizationContext, input: RequestI
       `;
       if (!material.length || material[0].archivedAt) missing();
     }
-    const request = await tx.materialRequest.create({ data: {
+    // Composite tenant foreign keys overlap in the nested create input.
+    // Write the header and lines separately inside the same inventory transaction.
+    const header = await tx.materialRequest.create({ data: {
       organizationId: actor.organizationId, projectId: site.projectId, siteId: input.siteId,
       requestedByMembershipId: actor.membershipId, reason: input.reason,
-      items: { create: input.items.map((line) => ({
-        organizationId: actor.organizationId, materialId: line.materialId,
-        quantityRequested: line.quantity,
-      })) },
-    }, include: details });
+    }, select: { id: true } });
+    await tx.materialRequestItem.createMany({ data: input.items.map((line) => ({
+      organizationId: actor.organizationId, requestId: header.id,
+      materialId: line.materialId, quantityRequested: line.quantity,
+    })) });
+    const request = await loadRequest(tx, actor.organizationId, header.id);
     await audit(tx, actor, requestId, "MATERIAL_REQUEST_CREATED", "MATERIAL_REQUEST", request.id,
       { siteId: request.siteId, lines: input.items });
     return dto(request);

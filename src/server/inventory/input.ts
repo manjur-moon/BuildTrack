@@ -1,11 +1,14 @@
 import { z } from "zod";
 import { ApiError } from "@/server/api/errors";
+import { toMilli } from "./decimal";
+export { toMilli, fromMilli } from "./decimal";
 
 const id = z.string().trim().min(1).max(128);
 const label = z.string().trim().min(2).max(120);
-const qty = z.string().trim().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,3})?$/, "Use a positive decimal with up to 3 places")
-  .refine((s) => toMilli(s) > 0n, "Quantity must be greater than zero");
-const nonnegative = z.string().trim().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,3})?$/, "Use a nonnegative decimal with up to 3 places");
+const decimalPattern = /^(?:0|[1-9]\d{0,11})(?:\.\d{1,3})?$/;
+const nonnegative = z.string().trim().regex(decimalPattern, "Use a nonnegative decimal with up to 3 places");
+// A pipe runs its second schema only after the first has parsed successfully.
+const qty = nonnegative.pipe(z.string().refine((s) => toMilli(s) > 0n, "Quantity must be greater than zero"));
 const text = z.string().trim().min(8).max(500);
 export const categoryInput = z.strictObject({ name: label });
 export const materialInput = z.strictObject({
@@ -36,15 +39,6 @@ export const issueInput = z.strictObject({ lines: z.array(z.strictObject({ reque
 export const usageInput = z.strictObject({ quantity: qty, note: text.optional() });
 export const returnInput = z.strictObject({ quantity: qty, reason: text });
 
-export function toMilli(value: string): bigint {
-  const [whole, fraction = ""] = value.split(".");
-  return BigInt(whole) * 1000n + BigInt((fraction + "000").slice(0, 3));
-}
-export function fromMilli(value: bigint): string {
-  const neg = value < 0n;
-  const abs = neg ? -value : value;
-  return `${neg ? "-" : ""}${abs / 1000n}.${(abs % 1000n).toString().padStart(3,"0")}`;
-}
 export function requireWithin(value: bigint, max: bigint, message: string) {
   if (value < 0n || value > max) throw new ApiError(409, "CONFLICT", message);
 }
