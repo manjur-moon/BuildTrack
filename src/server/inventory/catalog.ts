@@ -29,6 +29,8 @@ export async function createCategory(actor: AuthorizationContext, input: z.outpu
   if (!canManageCatalog(actor)) missing();
   return inventoryWrite(actor, "material.category.create", key, input, async (tx) => {
     await requireCatalogAdmin(tx, actor);
+  }, async (tx) => {
+    await requireCatalogAdmin(tx, actor);
     const category = await tx.materialCategory.create({ data: { organizationId: actor.organizationId, name: input.name }, select: { id: true, name: true } });
     await audit(tx, actor, requestId, "MATERIAL_CATEGORY_CREATED", "MATERIAL_CATEGORY", category.id, { name: category.name });
     return category;
@@ -37,6 +39,8 @@ export async function createCategory(actor: AuthorizationContext, input: z.outpu
 export async function createMaterial(actor: AuthorizationContext, input: MaterialInput, key: string, requestId: string) {
   if (!canManageCatalog(actor)) missing();
   return inventoryWrite(actor, "material.create", key, input, async (tx) => {
+    await requireCatalogAdmin(tx, actor);
+  }, async (tx) => {
     await requireCatalogAdmin(tx, actor);
     const cat = await tx.materialCategory.findFirst({ where: { organizationId: actor.organizationId, id: input.categoryId }, select: { id: true } });
     if (!cat) missing();
@@ -52,6 +56,8 @@ export async function editMaterial(actor: AuthorizationContext, id: string,
   input: z.output<typeof editMaterialInput>, key: string, requestId: string) {
   if (!canManageCatalog(actor)) missing();
   return inventoryWrite(actor, "material.edit", key, { id, ...input }, async (tx) => {
+    await requireCatalogAdmin(tx, actor);
+  }, async (tx) => {
     await requireCatalogAdmin(tx, actor);
     const lock = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT "id" FROM "Material" WHERE "id" = ${id}

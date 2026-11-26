@@ -53,6 +53,9 @@ export async function recordMovement(actor: AuthorizationContext, input: Movemen
   return inventoryWrite(actor, "inventory.movement", key, input, async (tx) => {
     await lockedSite(tx, actor, input.siteId, "stock:record");
     if (input.type !== "RECEIPT") await requireCatalogAdmin(tx, actor);
+  }, async (tx) => {
+    await lockedSite(tx, actor, input.siteId, "stock:record");
+    if (input.type !== "RECEIPT") await requireCatalogAdmin(tx, actor);
     const inventory = await ensureInventory(tx, actor.organizationId, input.siteId, input.materialId);
     const delta = toMilli(input.quantity) * (input.type === "ADJUSTMENT_OUT" ? -1n : 1n);
     const balance = toMilli(inventory.onHand.toString()) + delta;
@@ -70,6 +73,8 @@ export async function recordMovement(actor: AuthorizationContext, input: Movemen
 }
 export async function setThreshold(actor: AuthorizationContext, input: z.output<typeof thresholdInput>, key: string, requestId: string) {
   return inventoryWrite(actor, "inventory.reorder", key, input, async (tx) => {
+    await lockedSite(tx, actor, input.siteId, "stock:record");
+  }, async (tx) => {
     await lockedSite(tx, actor, input.siteId, "stock:record");
     const inventory = await ensureInventory(tx, actor.organizationId, input.siteId, input.materialId);
     const updated = await tx.siteInventory.update({ where: { id: inventory.id }, data: { reorderLevel: input.reorderLevel } });

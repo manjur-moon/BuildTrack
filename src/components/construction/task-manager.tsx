@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api, jsonRequest, type Page, type Project, type Site } from "./api";
+import { TaskDependencies } from "./task-dependencies";
 import { ListPagination } from "./list-controls";
 
 type Task = {
@@ -10,6 +11,7 @@ type Task = {
   siteId: string | null; siteName: string | null;
   title: string; description: string | null; priority: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   status: "TODO" | "IN_PROGRESS" | "REVIEW" | "COMPLETED";
+  blocked: boolean;
   progressPercent: number; startsOn: string | null; dueOn: string;
   completedAt: string | null; createdAt: string; updatedAt: string;
   assignees: { id: string; name: string }[];
@@ -326,7 +328,7 @@ export function TaskManager({ canCreate }: { canCreate: boolean }) {
           <td><strong>{task.title}</strong><small>{task.assignees.map((a) => a.name).join(", ") || "Unassigned"}</small></td>
           <td><strong>{task.projectCode}</strong><small>{task.siteName ?? "Project-level work"}</small></td>
           <td><span className="bt-crud-tag">{task.priority}</span></td>
-          <td><span className="bt-crud-tag">{nice(task.status)}</span></td>
+          <td><span className="bt-crud-tag">{nice(task.status)}</span>{task.blocked && <small>Blocked</small>}</td>
           <td><div className="bt-task-progress"><span style={{ width: `${task.progressPercent}%` }} /></div><small>{task.progressPercent}%</small></td>
           <td>{task.dueOn}</td>
           <td><button className="bt-task-plain" type="button" onClick={() => void openTask(task)}>Manage</button></td>
@@ -343,6 +345,8 @@ export function TaskManager({ canCreate }: { canCreate: boolean }) {
             <div><dt>Progress</dt><dd>{selected.progressPercent}%</dd></div>
             <div><dt>Priority</dt><dd>{selected.priority}</dd></div>
             <div><dt>Due date</dt><dd>{selected.dueOn}</dd></div></dl>
+          {selected.blocked && <p role="status">Blocked: complete all prerequisites before progressing.</p>}
+          {selected.canEdit && <TaskDependencies key={selected.id} taskId={selected.id} editable={selected.status !== "COMPLETED"} onChange={refresh}/>}
           {selected.description && <p className="bt-task-description">{selected.description}</p>}
           <div className="bt-task-inline-actions">
             {selected.canEdit && selected.status !== "COMPLETED" && <button type="button" onClick={() => openEdit(selected)}>Edit details</button>}

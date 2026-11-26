@@ -17,7 +17,7 @@ export const PERMISSIONS = [
   "site:view", "site:update",
   "task:view", "task:create", "task:assign", "task:update", "task:status:update", "task:attachment:upload",
   "inventory:view", "stock:record", "material-request:create", "material-request:approve", "material:manage",
-  "expense:view", "expense:create", "expense:post",
+  "expense:view", "expense:create", "expense:post", "expense:manage", "expense-category:manage",
   "report:view", "contract:view", "contract:update",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
@@ -65,7 +65,7 @@ const ROLE_PERMISSIONS: Record<BusinessRole, readonly Permission[]> = {
   ],
   FINANCE_MANAGER: [
     "organization:view", "project:view", "inventory:view", "expense:view",
-    "expense:create", "expense:post", "report:view", "contract:view",
+    "expense:create", "expense:post", "expense:manage", "expense-category:manage", "report:view", "contract:view",
   ],
   CONTRACTOR: [
     "project:summary:view", "task:view", "task:status:update", "task:attachment:upload",
@@ -73,7 +73,7 @@ const ROLE_PERMISSIONS: Record<BusinessRole, readonly Permission[]> = {
 };
 
 const ORGANIZATION_ONLY = new Set<Permission>([
-  "organization:view", "member:invite", "role:assign", "audit:view", "project:create", "material:manage",
+  "organization:view", "member:invite", "role:assign", "audit:view", "project:create", "material:manage", "expense-category:manage",
 ]);
 
 /** No implicit permission for Better Auth 'member' or 'admin' strings. */

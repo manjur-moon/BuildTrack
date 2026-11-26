@@ -45,6 +45,9 @@ export async function createRequest(actor: AuthorizationContext, input: RequestI
   return inventoryWrite(actor, "material.request.create", key, input, async (tx) => {
     const site = await lockedSite(tx, actor, input.siteId, "material-request:create");
     if (site.projectId !== input.projectId) missing();
+  }, async (tx) => {
+    const site = await lockedSite(tx, actor, input.siteId, "material-request:create");
+    if (site.projectId !== input.projectId) missing();
     // Lock material catalogue rows after the site lock, always in sorted ID order.
     // This serializes against owner archiving while the requisition is being created.
     const sortedIds = [...input.items.map((i) => i.materialId)].sort();
@@ -74,6 +77,10 @@ export async function createRequest(actor: AuthorizationContext, input: RequestI
 export async function decideRequest(actor: AuthorizationContext, id: string, input: DecisionInput,
   key: string, requestId: string) {
   return inventoryWrite(actor, "material.request.decision", key, { id, ...input }, async (tx) => {
+    const initial = await tx.materialRequest.findFirst({ where: { id, organizationId: actor.organizationId }, select: { siteId: true } });
+    if (!initial) missing();
+    await lockedSite(tx, actor, initial.siteId, "material-request:approve");
+  }, async (tx) => {
     const initial = await tx.materialRequest.findFirst({ where: { id, organizationId: actor.organizationId },
       select: { siteId: true } });
     if (!initial) missing();
@@ -115,6 +122,10 @@ export async function decideRequest(actor: AuthorizationContext, id: string, inp
 export async function issueRequest(actor: AuthorizationContext, id: string, input: IssueInput,
   key: string, requestId: string) {
   return inventoryWrite(actor, "material.request.issue", key, { id, ...input }, async (tx) => {
+    const initial = await tx.materialRequest.findFirst({ where: { id, organizationId: actor.organizationId }, select: { siteId: true } });
+    if (!initial) missing();
+    await lockedSite(tx, actor, initial.siteId, "stock:record");
+  }, async (tx) => {
     const initial = await tx.materialRequest.findFirst({ where: { id, organizationId: actor.organizationId },
       select: { siteId: true } });
     if (!initial) missing();

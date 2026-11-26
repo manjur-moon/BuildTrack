@@ -155,4 +155,20 @@ describe.skipIf(!enabled)("Step 12 — isolated PostgreSQL stock ledger, approva
       reason: "Cross org attempt blocked" }, uuid(), requestId)).rejects.toMatchObject({ status: 404 });
     expect(await db.auditEvent.count({ where: { requestId } })).toBe(0);
   });
+  it("rejects cached stock responses for different actors and revoked grants", async () => {
+    const body = { siteId, materialId, quantity: "1.000", type: "RECEIPT" as const,
+      reason: "Replay authorization regression" };
+    const key = uuid();
+    const first = await stock.recordMovement(engineer(), body, key, uuid());
+    const auditBefore = await db.auditEvent.count({ where: { organizationId: orgId } });
+    expect((await stock.recordMovement(engineer(), body, key, uuid())).id).toBe(first.id);
+    await expect(stock.recordMovement(manager(), body, key, uuid())).rejects.toMatchObject({ status: 409 });
+    await expect(stock.recordMovement({ ...engineer(), grants: [] }, body, key, uuid())).rejects.toMatchObject({ status: 404 });
+    await db.operationalRoleAssignment.updateMany({ where: { organizationId: orgId,
+      membershipId: engineerId, role: "SITE_ENGINEER", revokedAt: null }, data: { revokedAt: new Date(), revokedByMembershipId: ownerId } });
+    await expect(stock.recordMovement(engineer(), body, key, uuid())).rejects.toMatchObject({ status: 403 });
+    expect(await db.stockMovement.count({ where: { organizationId: orgId, idempotencyKey: key } })).toBe(1);
+    expect(await db.auditEvent.count({ where: { organizationId: orgId } })).toBe(auditBefore);
+  });
+
 });

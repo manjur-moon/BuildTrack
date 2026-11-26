@@ -1,3 +1,4 @@
+import { createsDependencyCycle } from "./dependency-graph";
 import { prisma } from "@/server/db/client";
 import { ApiError } from "@/server/api/errors";
 import { hasPermission, type AuthorizationContext } from "@/server/rbac/policy";
@@ -16,6 +17,7 @@ const taskSelect = {
   createdByMembershipId: true, createdAt: true, updatedAt: true,
   project: { select: { name: true, code: true } },
   site: { select: { name: true } },
+  incomingDependencies: { select: { predecessor: { select: { status: true, archivedAt: true } } } },
   assignees: { where: { unassignedAt: null }, select: {
     membershipId: true, projectMember: { select: { member: { select: { user: { select: { name: true } } } } } },
   } },
@@ -39,6 +41,7 @@ function taskDto(actor: AuthorizationContext, row: TaskRow) {
     id: row.id, projectId: row.projectId, projectName: row.project.name, projectCode: row.project.code,
     siteId: row.siteId, siteName: row.site?.name ?? null,
     title: row.title, description: row.description, priority: row.priority,
+    blocked: row.incomingDependencies.some(({ predecessor }) => predecessor.status !== "COMPLETED" || predecessor.archivedAt !== null),
     status: row.status, progressPercent: Number(row.progressPercent),
     startsOn: day(row.startsOn), dueOn: day(row.dueOn),
     completedAt: row.completedAt?.toISOString() ?? null,
@@ -189,6 +192,9 @@ export async function updateTaskProgress(actor: AuthorizationContext, taskId: st
     }
     const canApprove = hasPermission(actor, "task:update", resource);
     validateProgressTransition(row.status as TaskStatus, input.status, input.progressPercent, canApprove);
+    if (input.status !== "TODO" && row.incomingDependencies.some(({ predecessor }) => predecessor.status !== "COMPLETED" || predecessor.archivedAt !== null)) {
+      conflict("Complete all prerequisites before progressing this task.");
+    }
     if (input.status === row.status && input.progressPercent === Number(row.progressPercent)) {
       conflict("No progress or status change was submitted.");
     }
@@ -376,6 +382,9 @@ export async function archiveTask(actor: AuthorizationContext, taskId: string,
     const resource = resourceFor(actor, task);
     if (!hasPermission(actor, "task:update", resource)) notFound();
     await assertCurrentWriteAccess(tx, actor, "task:update", resource);
+    if (await tx.taskDependency.count({ where: { organizationId: actor.organizationId, projectId: task.projectId, predecessorTaskId: taskId, successor: { is: { archivedAt: null } } } })) {
+      conflict("Remove dependencies from active successor tasks before archiving this prerequisite.");
+    }
     const archivedAt = new Date();
     const result = await tx.task.updateMany({ where: { id: taskId, organizationId: actor.organizationId,
       archivedAt: null, updatedAt: new Date(input.expectedUpdatedAt) }, data: { archivedAt } });
@@ -427,4 +436,53 @@ export async function getTaskSummary(actor: AuthorizationContext, query: TaskLis
   for (const group of groups) counts[group.status] = group._count._all;
   return { total: Object.values(counts).reduce((sum, n) => sum + n, 0),
     counts, overdue, averageProgress: Number(aggregate._avg.progressPercent ?? 0) };
+}
+
+/** Only task editors may see prerequisite identities or modify the graph. */
+export async function listTaskDependencies(actor: AuthorizationContext, taskId: string) {
+  const row = await prisma.task.findFirst({ where: { id: taskId, organizationId: actor.organizationId,
+    archivedAt: null, AND: [taskReadScope(actor)] }, select: taskSelect });
+  if (!row || !hasPermission(actor, "task:update", resourceFor(actor, row))) notFound();
+  await assertCurrentWriteAccess(prisma, actor, "task:update", resourceFor(actor, row));
+  const items = await prisma.taskDependency.findMany({ where: { organizationId: actor.organizationId,
+    projectId: row.projectId, successorTaskId: taskId }, select: { predecessorTaskId: true,
+    predecessor: { select: { title: true, status: true, archivedAt: true } } }, orderBy: { createdAt: "asc" } });
+  const candidates = await prisma.task.findMany({ where: { organizationId: actor.organizationId,
+    projectId: row.projectId, archivedAt: null, id: { not: taskId }, AND: [taskReadScope(actor)] },
+    select: { id: true, title: true, status: true }, orderBy: [{ title: "asc" }, { id: "asc" }], take: 101 });
+  return { items, candidates: candidates.slice(0, 100), truncated: candidates.length > 100 };
+}
+
+export async function changeTaskDependency(actor: AuthorizationContext, taskId: string,
+  predecessorId: string, operation: "add" | "remove", requestId: string) {
+  return prisma.$transaction(async (tx) => {
+    // All task status changes and graph edits acquire the same project lock.
+    const row = await lockedTask(tx, actor, taskId);
+    const resource = resourceFor(actor, row);
+    if (!hasPermission(actor, "task:update", resource)) notFound();
+    await assertCurrentWriteAccess(tx, actor, "task:update", resource);
+    if (row.status === "COMPLETED") conflict("Completed task dependencies are locked.");
+    if (taskId === predecessorId) conflict("A task cannot depend on itself.");
+    const where = { organizationId: actor.organizationId, projectId: row.projectId,
+      predecessorTaskId: predecessorId, successorTaskId: taskId };
+    const existing = await tx.taskDependency.findFirst({ where, select: { id: true } });
+    if (operation === "add") {
+      const predecessor = await tx.task.findFirst({ where: { id: predecessorId,
+        organizationId: actor.organizationId, projectId: row.projectId, archivedAt: null }, select: taskSelect });
+      if (!predecessor || !isVisible(actor, predecessor)) notFound();
+      if (existing) return { changed: false };
+      if (row.status !== "TODO" && predecessor.status !== "COMPLETED") conflict("An active task cannot acquire an incomplete prerequisite.");
+      const edges = await tx.taskDependency.findMany({ where: { organizationId: actor.organizationId,
+        projectId: row.projectId }, select: { predecessorTaskId: true, successorTaskId: true } });
+      if (createsDependencyCycle(edges, predecessorId, taskId)) conflict("Circular task dependency is not allowed.");
+      await tx.taskDependency.create({ data: where });
+    } else {
+      if (!existing) return { changed: false };
+      await tx.taskDependency.deleteMany({ where });
+    }
+    await tx.auditEvent.create({ data: { organizationId: actor.organizationId,
+      actorMembershipId: actor.membershipId, action: operation === "add" ? "TASK_DEPENDENCY_ADDED" : "TASK_DEPENDENCY_REMOVED",
+      resourceType: "TASK", resourceId: taskId, requestId, after: { predecessorTaskId: predecessorId, operation } } });
+    return { changed: true };
+  }).catch(rethrowConstructionConflict);
 }

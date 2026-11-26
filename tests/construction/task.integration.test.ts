@@ -94,4 +94,30 @@ describe.skipIf(!enabled)("Step 11 — isolated PostgreSQL task integrity and RB
     ]);
     expect(project.archivedAt !== null && liveTaskCount > 0).toBe(false);
   }, 30_000);
+  it("blocks progress until prerequisite completion and rejects cycles and foreign actors", async () => {
+    const a = await svc.createTask(actor(), { ...payload(), title: "Prerequisite" }, req(), req());
+    const b = await svc.createTask(actor(), { ...payload(), title: "Successor" }, req(), req());
+    await svc.changeTaskDependency(actor(), b.id, a.id, "add", req());
+    expect((await svc.getTask(actor(), b.id)).blocked).toBe(true);
+    await expect(svc.changeTaskDependency(actor(), a.id, b.id, "add", req())).rejects.toMatchObject({ status: 409 });
+    await expect(svc.changeTaskDependency(outsider(), b.id, a.id, "remove", req())).rejects.toMatchObject({ status: 404 });
+    await expect(svc.archiveTask(actor(), a.id, { expectedUpdatedAt: a.updatedAt, reason: "Archive blocked prerequisite" }, req())).rejects.toMatchObject({ status: 409 });
+    await expect(svc.updateTaskProgress(actor(), b.id, { expectedUpdatedAt: b.updatedAt, status: "IN_PROGRESS", progressPercent: 10 }, req())).rejects.toMatchObject({ status: 409 });
+    const a1 = await svc.updateTaskProgress(actor(), a.id, { expectedUpdatedAt: a.updatedAt, status: "IN_PROGRESS", progressPercent: 20 }, req());
+    const a2 = await svc.updateTaskProgress(actor(), a.id, { expectedUpdatedAt: a1.updatedAt, status: "REVIEW", progressPercent: 90 }, req());
+    await svc.updateTaskProgress(actor(), a.id, { expectedUpdatedAt: a2.updatedAt, status: "COMPLETED", progressPercent: 100 }, req());
+    expect((await svc.getTask(actor(), b.id)).blocked).toBe(false);
+    expect((await svc.updateTaskProgress(actor(), b.id, { expectedUpdatedAt: b.updatedAt, status: "IN_PROGRESS", progressPercent: 10 }, req())).status).toBe("IN_PROGRESS");
+  });
+  it("serializes competing opposite dependency edges", async () => {
+    const a = await svc.createTask(actor(), payload(), req(), req());
+    const b = await svc.createTask(actor(), payload(), req(), req());
+    const results = await Promise.allSettled([
+      svc.changeTaskDependency(actor(), b.id, a.id, "add", req()),
+      svc.changeTaskDependency(actor(), a.id, b.id, "add", req()),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(await db.taskDependency.count({ where: { organizationId: orgId, projectId, predecessorTaskId: { in: [a.id, b.id] }, successorTaskId: { in: [a.id, b.id] } } })).toBe(1);
+  }, 30_000);
+
 });

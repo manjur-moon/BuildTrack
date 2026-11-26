@@ -16,15 +16,19 @@ function replay<T>(row: { requestHash: string; status: string; responseBody: unk
 
 /** Business write, audit event, and replay record commit in a single transaction. */
 export async function inventoryWrite<T extends object>(actor: AuthorizationContext, operation: string,
-  key: string, payload: object, action: (tx: Tx) => Promise<T>): Promise<T> {
-  const hash = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  key: string, payload: object, authorizeReplay: (tx: Tx) => Promise<void>,
+  action: (tx: Tx) => Promise<T>): Promise<T> {
+  const hash = createHash("sha256").update(JSON.stringify({ version: 2, membershipId: actor.membershipId, payload })).digest("hex");
   const where = { organizationId_operation_requestKey: {
     organizationId: actor.organizationId, operation, requestKey: key,
   } };
   try {
     return await prisma.$transaction(async (tx) => {
       const previous = await tx.idempotencyRecord.findUnique({ where });
-      if (previous) return replay<T>(previous, hash);
+      if (previous) {
+        await authorizeReplay(tx);
+        return replay<T>(previous, hash);
+      }
       await tx.idempotencyRecord.create({ data: {
         organizationId: actor.organizationId, operation, requestKey: key, requestHash: hash,
         status: "PROCESSING", expiresAt: new Date(Date.now() + 86400000),
@@ -40,9 +44,14 @@ export async function inventoryWrite<T extends object>(actor: AuthorizationConte
   } catch (error) {
     if (error && typeof error === "object" && "code" in error) {
       if (error.code === "P2002") {
-        const existing = await prisma.idempotencyRecord.findUnique({ where });
-        if (existing) return replay<T>(existing, hash);
-        throw new ApiError(409, "CONFLICT", "Duplicate material or stock record.");
+        return await prisma.$transaction(async (tx) => {
+          const existing = await tx.idempotencyRecord.findUnique({ where });
+          if (existing) {
+            await authorizeReplay(tx);
+            return replay<T>(existing, hash);
+          }
+          throw new ApiError(409, "CONFLICT", "Duplicate material or stock record.");
+        }, { maxWait: 5000, timeout: 20000 });
       }
       if (error.code === "P2034") throw new ApiError(409, "CONFLICT", "Concurrent stock update. Retry with the same request key.");
     }

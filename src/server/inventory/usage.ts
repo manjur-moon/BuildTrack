@@ -48,6 +48,9 @@ export async function consumeIssued(actor: AuthorizationContext, id: string,
   return inventoryWrite(actor, "material.issue.consume", key, { id, ...input }, async (tx) => {
     const initial = await getIssueItem(tx, actor.organizationId, id);
     await lockedSite(tx, actor, initial.issue.siteId, "stock:record");
+  }, async (tx) => {
+    const initial = await getIssueItem(tx, actor.organizationId, id);
+    await lockedSite(tx, actor, initial.issue.siteId, "stock:record");
     const rows = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT "id" FROM "MaterialIssueItem" WHERE "id" = ${id}
         AND "organizationId" = ${actor.organizationId} FOR UPDATE
@@ -72,6 +75,9 @@ export async function consumeIssued(actor: AuthorizationContext, id: string,
 export async function returnIssued(actor: AuthorizationContext, id: string,
   input: z.output<typeof returnInput>, key: string, requestId: string) {
   return inventoryWrite(actor, "material.issue.return", key, { id, ...input }, async (tx) => {
+    const initial = await getIssueItem(tx, actor.organizationId, id);
+    await lockedSite(tx, actor, initial.issue.siteId, "stock:record");
+  }, async (tx) => {
     const initial = await getIssueItem(tx, actor.organizationId, id);
     await lockedSite(tx, actor, initial.issue.siteId, "stock:record");
     const rows = await tx.$queryRaw<Array<{ id: string }>>`
