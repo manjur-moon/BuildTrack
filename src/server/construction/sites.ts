@@ -5,6 +5,7 @@ import type { CreateSiteInput, UpdateSiteInput } from "./input";
 import { assertCurrentWriteAccess } from "./write-access";
 import { canCreateSite, siteReadScope } from "./scope";
 import { idempotentCreate } from "./idempotency";
+import { requireLiveProjectLock, lockSiteRow, rethrowConstructionConflict } from "./locking";
 
 const siteSelect = { id: true, organizationId: true, projectId: true, name: true, location: true,
   status: true, createdAt: true, updatedAt: true } as const;
@@ -53,6 +54,8 @@ export async function createSite(actor: AuthorizationContext, input: CreateSiteI
   const resource = { organizationId: actor.organizationId, projectId: input.projectId };
   if (!canCreateSite(actor, input.projectId)) throw new ApiError(404, "NOT_FOUND", "Project not found.");
   return idempotentCreate(actor, "site.create", key, input, async (tx) => {
+    // Parent lock prevents a simultaneous archive from passing its live-site check.
+    await requireLiveProjectLock(tx, actor.organizationId, input.projectId);
     const project = await tx.project.findFirst({ where: { id: input.projectId, organizationId: actor.organizationId, archivedAt: null }, select: { id: true } });
     if (!project) throw new ApiError(404, "NOT_FOUND", "Project not found.");
     await assertCurrentWriteAccess(tx, actor, "project:update", resource);
@@ -62,7 +65,7 @@ export async function createSite(actor: AuthorizationContext, input: CreateSiteI
       action: "SITE_CREATED", resourceType: "CONSTRUCTION_SITE", resourceId: row.id, requestId,
       after: { projectId: row.projectId, name: row.name, status: row.status } } });
     return dto(row, actor);
-  });
+  }).catch(rethrowConstructionConflict);
 }
 
 export async function updateSite(actor: AuthorizationContext, siteId: string, input: UpdateSiteInput, requestId: string) {
@@ -70,6 +73,12 @@ export async function updateSite(actor: AuthorizationContext, siteId: string, in
     const row = await tx.constructionSite.findFirst({ where: { id: siteId, organizationId: actor.organizationId,
       archivedAt: null, project: { is: { archivedAt: null } } }, select: siteSelect });
     if (!row) throw new ApiError(404, "NOT_FOUND", "Site not found.");
+    // Always acquire parent then child lock; re-read live state after waiting.
+    await requireLiveProjectLock(tx, actor.organizationId, row.projectId);
+    const siteLock = await lockSiteRow(tx, actor.organizationId, row.projectId, siteId);
+    if (!siteLock || siteLock.archivedAt !== null) {
+      throw new ApiError(404, "NOT_FOUND", "Site not found.");
+    }
     const resource = { organizationId: actor.organizationId, projectId: row.projectId, siteId };
     if (!hasPermission(actor, "site:update", resource)) throw new ApiError(404, "NOT_FOUND", "Site not found.");
     await assertCurrentWriteAccess(tx, actor, "site:update", resource);
@@ -82,6 +91,10 @@ export async function updateSite(actor: AuthorizationContext, siteId: string, in
       await assertCurrentWriteAccess(tx, actor, "project:update", resource);
     }
     if (input.status === "CLOSED") {
+      const assignedStaff = await tx.siteAssignment.count({ where: {
+        organizationId: actor.organizationId, projectId: row.projectId, siteId, endedAt: null,
+      } });
+      if (assignedStaff) throw new ApiError(409, "CONFLICT", "Revoke active site staff before closing the site.");
       const unfinished = await tx.task.count({ where: { organizationId: actor.organizationId,
         siteId, archivedAt: null, status: { not: "COMPLETED" } } });
       if (unfinished) throw new ApiError(409, "CONFLICT", "Complete or reassign open site tasks before closing the site.");
@@ -98,7 +111,7 @@ export async function updateSite(actor: AuthorizationContext, siteId: string, in
       action: "SITE_UPDATED", resourceType: "CONSTRUCTION_SITE", resourceId: siteId, requestId,
       before: { name: row.name, status: row.status }, after: { name: updated.name, status: updated.status } } });
     return dto(updated, actor);
-  });
+  }).catch(rethrowConstructionConflict);
 }
 
 export async function archiveSite(actor: AuthorizationContext, siteId: string, expectedUpdatedAt: string, requestId: string) {
@@ -106,9 +119,19 @@ export async function archiveSite(actor: AuthorizationContext, siteId: string, e
     const row = await tx.constructionSite.findFirst({ where: { id: siteId, organizationId: actor.organizationId,
       archivedAt: null, project: { is: { archivedAt: null } } }, select: siteSelect });
     if (!row) throw new ApiError(404, "NOT_FOUND", "Site not found.");
+    // Always acquire parent then child lock; re-read live state after waiting.
+    await requireLiveProjectLock(tx, actor.organizationId, row.projectId);
+    const siteLock = await lockSiteRow(tx, actor.organizationId, row.projectId, siteId);
+    if (!siteLock || siteLock.archivedAt !== null) {
+      throw new ApiError(404, "NOT_FOUND", "Site not found.");
+    }
     const resource = { organizationId: actor.organizationId, projectId: row.projectId, siteId };
     if (!hasPermission(actor, "project:archive", resource)) throw new ApiError(404, "NOT_FOUND", "Site not found.");
     await assertCurrentWriteAccess(tx, actor, "project:archive", resource);
+    const activeStaff = await tx.siteAssignment.count({ where: {
+      organizationId: actor.organizationId, projectId: row.projectId, siteId, endedAt: null,
+    } });
+    if (activeStaff) throw new ApiError(409, "CONFLICT", "Revoke active site staff before archiving the site.");
     const unfinished = await tx.task.count({ where: { organizationId: actor.organizationId, siteId, archivedAt: null,
       status: { not: "COMPLETED" } } });
     if (unfinished) throw new ApiError(409, "CONFLICT", "Complete or reassign open site tasks first.");
@@ -119,5 +142,5 @@ export async function archiveSite(actor: AuthorizationContext, siteId: string, e
       action: "SITE_ARCHIVED", resourceType: "CONSTRUCTION_SITE", resourceId: siteId, requestId,
       before: { name: row.name, archivedAt: null }, after: { archivedAt: new Date().toISOString() } } });
     return { id: siteId, archived: true };
-  });
+  }).catch(rethrowConstructionConflict);
 }

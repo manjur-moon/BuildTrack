@@ -4,7 +4,7 @@ import { prisma } from "@/server/db/client";
 import type { AuthorizationContext } from "@/server/rbac/policy";
 
 export type ConstructionTx = Pick<typeof prisma, "project" | "constructionSite" | "auditEvent" | "member" |
-  "operationalRoleAssignment" | "projectMember" | "siteAssignment" | "task" | "idempotencyRecord">;
+  "operationalRoleAssignment" | "projectMember" | "siteAssignment" | "task" | "idempotencyRecord" | "$queryRaw">;
 
 /** Replay a completed create; key reuse with a different payload is a conflict. */
 export async function idempotentCreate<T extends object>(

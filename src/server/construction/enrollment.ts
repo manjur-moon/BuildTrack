@@ -3,6 +3,7 @@ import { ApiError } from "@/server/api/errors";
 import type { AuthorizationContext } from "@/server/rbac/policy";
 import { canManageStaffEnrollment, type EnrollStaffInput } from "./enrollment-input";
 import { idempotentCreate } from "./idempotency";
+import { lockProjectRow, requireLiveProjectLock, lockSiteRow } from "./locking";
 
 /**
  * Organizational onboarding is an owner-only administrative operation.
@@ -80,6 +81,8 @@ export async function enrollStaff(
       let projectId: string;
       let siteId: string | null = null;
       if (input.role === "PROJECT_MANAGER") {
+        // One shared Project lock coordinates concurrent PM grants and archives.
+        await requireLiveProjectLock(tx, actor.organizationId, input.projectId);
         const project = await tx.project.findFirst({ where: { id: input.projectId,
           organizationId: actor.organizationId, archivedAt: null,
           status: { in: ["PLANNED", "ACTIVE", "ON_HOLD"] } },
@@ -90,6 +93,16 @@ export async function enrollStaff(
         }
         projectId = project.id;
       } else {
+        // Read only the immutable projectId before acquiring locks in order.
+        const preliminarySite = await tx.constructionSite.findFirst({ where: {
+          id: input.siteId, organizationId: actor.organizationId,
+        }, select: { projectId: true } });
+        if (!preliminarySite) throw new ApiError(404, "NOT_FOUND", "Active construction site not found.");
+        await requireLiveProjectLock(tx, actor.organizationId, preliminarySite.projectId);
+        const siteLock = await lockSiteRow(tx, actor.organizationId, preliminarySite.projectId, input.siteId);
+        if (!siteLock || siteLock.archivedAt || siteLock.status === "CLOSED") {
+          throw new ApiError(409, "CONFLICT", "Site is closed or archived. Refresh and retry.");
+        }
         const site = await tx.constructionSite.findFirst({ where: { id: input.siteId,
           organizationId: actor.organizationId, archivedAt: null,
           project: { is: { archivedAt: null, status: { in: ["PLANNED", "ACTIVE", "ON_HOLD"] } } } },
@@ -169,6 +182,31 @@ export async function revokeStaffEnrollment(actor: AuthorizationContext, grantId
         role: { in: ["PROJECT_MANAGER", "SITE_ENGINEER"] } },
         select: { id: true, role: true, membershipId: true, projectId: true, siteId: true } });
       if (!grant || !grant.projectId) throw new ApiError(404, "NOT_FOUND", "Active staff assignment not found.");
+      // Project → Site lock order is shared with create/archive/enroll. An
+      // archive cannot slip between the revocation checks and membership writes.
+      const projectLock = await lockProjectRow(tx, actor.organizationId, grant.projectId);
+      if (!projectLock) throw new ApiError(404, "NOT_FOUND", "Project not found.");
+      if (grant.siteId) {
+        const siteLock = await lockSiteRow(tx, actor.organizationId, grant.projectId, grant.siteId);
+        if (!siteLock) throw new ApiError(404, "NOT_FOUND", "Site not found.");
+      }
+      // Reject revocation while this member has unfinished, nonarchived tasks
+      // in the exact scope being removed. Never silently orphan the assignee.
+      const unfinishedTaskAssignments = await tx.taskAssignment.count({ where: {
+        organizationId: actor.organizationId,
+        projectId: grant.projectId,
+        membershipId: grant.membershipId,
+        unassignedAt: null,
+        task: { is: {
+          archivedAt: null,
+          status: { not: "COMPLETED" },
+          ...(grant.role === "SITE_ENGINEER" ? { siteId: grant.siteId } : {}),
+        } },
+      } });
+      if (unfinishedTaskAssignments > 0) {
+        throw new ApiError(409, "CONFLICT",
+          `Cannot revoke: ${unfinishedTaskAssignments} open task assignment(s) require reassignment or completion.`);
+      }
       const now = new Date();
       const changed = await tx.operationalRoleAssignment.updateMany({ where: { id: grant.id,
         organizationId: actor.organizationId, revokedAt: null },
