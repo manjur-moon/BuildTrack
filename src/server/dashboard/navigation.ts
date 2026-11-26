@@ -21,6 +21,7 @@ const sections: readonly { label: string; items: readonly NavDefinition[] }[] = 
   ] },
   { label: "Management", items: [
     { key: "finance", label: "Finance", href: "/dashboard/finance", icon: "wallet", description: "Cost tracking and expenses", permissions: ["expense:view"] },
+    { key: "contractors", label: "Contractors", href: "/dashboard/contractors", icon: "users", description: "Companies and project assignments", permissions: ["role:assign"] },
     { key: "reports", label: "Reports", href: "/dashboard/reports", icon: "chart", description: "Operational and financial intelligence", permissions: ["report:view"] },
     { key: "team", label: "Team & access", href: "/dashboard/team", icon: "users", description: "Members and operational roles", permissions: ["role:assign"], ownerOnly: true },
   ] },
