@@ -68,7 +68,18 @@ export async function enrollStaff(
     throw new ApiError(403, "FORBIDDEN", "Owners cannot grant operational roles to themselves.");
   }
   try {
-    return await idempotentCreate(actor, "construction.staff.enroll", key, input, async (tx) => {
+    return await idempotentCreate(actor, "construction.staff.enroll", key, input, async (tx, id) => {
+      const owner = await tx.member.findFirst({ where: { id: actor.membershipId,
+        organizationId: actor.organizationId, role: "owner", disabledAt: null,
+        user: { is: { emailVerified: true } } }, select: { id: true } });
+      if (!owner) throw new ApiError(403, "FORBIDDEN", "Owner permission was revoked.");
+      const grant = await tx.operationalRoleAssignment.findFirst({ where: {
+        id, organizationId: actor.organizationId, membershipId: input.membershipId,
+        role: input.role, revokedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      }, select: { id: true } });
+      if (!grant) throw new ApiError(409, "CONFLICT", "Original staff assignment is no longer active.");
+    }, async (tx) => {
       const owner = await tx.member.findFirst({ where: { id: actor.membershipId,
         organizationId: actor.organizationId, role: "owner", disabledAt: null }, select: { id: true } });
       if (!owner) throw new ApiError(403, "FORBIDDEN", "Owner permission was revoked.");

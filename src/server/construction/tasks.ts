@@ -113,7 +113,17 @@ export async function createTask(actor: AuthorizationContext, input: CreateTaskI
   const resource = { organizationId: actor.organizationId, projectId: input.projectId,
     siteId: input.siteId ?? undefined };
   if (!hasPermission(actor, "task:create", resource)) notFound();
-  return idempotentCreate(actor, "construction.task.create", key, input, async (tx) => {
+  return idempotentCreate(actor, "construction.task.create", key, input, async (tx, id) => {
+    await requireLiveProjectLock(tx, actor.organizationId, input.projectId);
+    if (input.siteId) {
+      const site = await lockSiteRow(tx, actor.organizationId, input.projectId, input.siteId);
+      if (!site || site.archivedAt) notFound();
+    }
+    const task = await tx.task.findFirst({ where: { id, organizationId: actor.organizationId,
+      projectId: input.projectId, siteId: input.siteId ?? null, archivedAt: null }, select: { id: true } });
+    if (!task) notFound();
+    await assertCurrentWriteAccess(tx, actor, "task:create", resource);
+  }, async (tx) => {
     await requireLiveProjectLock(tx, actor.organizationId, input.projectId);
     const project = await tx.project.findFirst({ where: {
       id: input.projectId, organizationId: actor.organizationId, archivedAt: null,

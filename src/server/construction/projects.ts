@@ -1,4 +1,4 @@
-﻿import { prisma } from "@/server/db/client";
+import { prisma } from "@/server/db/client";
 import { ApiError } from "@/server/api/errors";
 import { hasPermission, type AuthorizationContext } from "@/server/rbac/policy";
 import type { CreateProjectInput, UpdateProjectInput } from "./input";
@@ -85,7 +85,10 @@ export async function getProject(actor: AuthorizationContext, projectId: string)
 export async function createProject(actor: AuthorizationContext, input: CreateProjectInput, requestId: string, key: string) {
   if (!canCreateProject(actor)) throw new ApiError(403, "FORBIDDEN", "Cannot create projects.");
   try {
-    return await idempotentCreate(actor, "project.create", key, input, async (tx) => {
+    return await idempotentCreate(actor, "project.create", key, input, async (tx, id) => {
+      await requireLiveProjectLock(tx, actor.organizationId, id);
+      await assertCurrentWriteAccess(tx, actor, "project:create", { organizationId: actor.organizationId });
+    }, async (tx) => {
       await assertCurrentWriteAccess(tx, actor, "project:create", { organizationId: actor.organizationId });
       const project = await tx.project.create({ data: {
         organizationId: actor.organizationId, name: input.name, code: input.code,

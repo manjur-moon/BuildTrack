@@ -1,4 +1,4 @@
-﻿import { ApiError } from "@/server/api/errors";
+import { ApiError } from "@/server/api/errors";
 import { prisma } from "@/server/db/client";
 import { hasPermission, type AuthorizationContext } from "@/server/rbac/policy";
 import type { CreateSiteInput, UpdateSiteInput } from "./input";
@@ -62,7 +62,12 @@ export async function getSite(actor: AuthorizationContext, siteId: string) {
 export async function createSite(actor: AuthorizationContext, input: CreateSiteInput, requestId: string, key: string) {
   const resource = { organizationId: actor.organizationId, projectId: input.projectId };
   if (!canCreateSite(actor, input.projectId)) throw new ApiError(404, "NOT_FOUND", "Project not found.");
-  return idempotentCreate(actor, "site.create", key, input, async (tx) => {
+  return idempotentCreate(actor, "site.create", key, input, async (tx, id) => {
+    await requireLiveProjectLock(tx, actor.organizationId, input.projectId);
+    const site = await lockSiteRow(tx, actor.organizationId, input.projectId, id);
+    if (!site || site.archivedAt) throw new ApiError(404, "NOT_FOUND", "Site not found.");
+    await assertCurrentWriteAccess(tx, actor, "project:update", resource);
+  }, async (tx) => {
     // Parent lock prevents a simultaneous archive from passing its live-site check.
     await requireLiveProjectLock(tx, actor.organizationId, input.projectId);
     const project = await tx.project.findFirst({ where: { id: input.projectId, organizationId: actor.organizationId, archivedAt: null }, select: { id: true } });

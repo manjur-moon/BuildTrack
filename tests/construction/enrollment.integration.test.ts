@@ -21,7 +21,7 @@ type Db = (typeof import("@/server/db/client"))["prisma"];
 type EnrollmentService = typeof import("@/server/construction/enrollment");
 
 type Fixture = { orgA: string; orgB: string; ownerA: string; ownerB: string;
-  subject: string; second: string; project: string; site: string; archivedSite: string };
+  subject: string; second: string; foreignSubject: string; project: string; site: string; archivedSite: string };
 
 describe.skipIf(!run)("Step 8 staff enrollment — isolated PostgreSQL security", () => {
   let prisma: Db;
@@ -53,6 +53,7 @@ describe.skipIf(!run)("Step 8 staff enrollment — isolated PostgreSQL security"
       const ownerA = await makeMember(a.id, "OwnerA", "owner");
       const ownerB = await makeMember(b.id, "OwnerB", "owner");
       const subject = await makeMember(a.id, "EngineerA", "member");
+      const foreignSubject = await makeMember(b.id, "EngineerB", "member");
       const second = await makeMember(a.id, "ManagerB", "member");
       const project = await tx.project.create({ data: { organizationId: a.id,
         name: "Integration Project", code: `ENR-${suffix}`, location: "Dhaka",
@@ -63,7 +64,7 @@ describe.skipIf(!run)("Step 8 staff enrollment — isolated PostgreSQL security"
       const archivedSite = await tx.constructionSite.create({ data: { organizationId: a.id,
         projectId: project.id, name: "Archived Site", location: "Dhaka", archivedAt: new Date() } });
       return { orgA: a.id, orgB: b.id, ownerA: ownerA.id, ownerB: ownerB.id,
-        subject: subject.id, second: second.id, project: project.id,
+        subject: subject.id, second: second.id, foreignSubject: foreignSubject.id, project: project.id,
         site: site.id, archivedSite: archivedSite.id };
     });
   }, 60_000);
@@ -81,18 +82,37 @@ describe.skipIf(!run)("Step 8 staff enrollment — isolated PostgreSQL security"
   });
 
   it("hides another organization's member and site", async () => {
+    const foreignMemberRequest = randomUUID();
+    const foreignSiteRequest = randomUUID();
     await expect(service.enrollStaff(owner(), { role: "PROJECT_MANAGER", projectId: f.project,
-      membershipId: f.ownerB }, randomUUID(), randomUUID())).rejects.toMatchObject({ status: 404 });
+      membershipId: f.foreignSubject }, foreignMemberRequest, randomUUID())).rejects.toMatchObject({ status: 404, code: "NOT_FOUND" });
+    // Use an ordinary member of org B so the self-grant guard cannot mask
+    // the cross-tenant site lookup being exercised here.
     await expect(service.enrollStaff(foreignOwner(), { role: "SITE_ENGINEER", siteId: f.site,
-      membershipId: f.ownerB }, randomUUID(), randomUUID())).rejects.toMatchObject({ status: 404 });
+      membershipId: f.foreignSubject }, foreignSiteRequest, randomUUID())).rejects.toMatchObject({ status: 404, code: "NOT_FOUND" });
+    expect(await prisma.auditEvent.count({ where: { requestId: { in: [foreignMemberRequest, foreignSiteRequest] } } })).toBe(0);
+    expect(await prisma.operationalRoleAssignment.count({ where: { membershipId: f.foreignSubject } })).toBe(0);
     const foreignWorkspace = await service.getEnrollmentWorkspace(foreignOwner());
     expect(foreignWorkspace.projects).toHaveLength(0);
     expect(foreignWorkspace.sites).toHaveLength(0);
   });
 
+  it("rejects an owner self-grant before resource lookup", async () => {
+    const requestId = randomUUID();
+    await expect(service.enrollStaff(foreignOwner(), { role: "SITE_ENGINEER", siteId: f.site,
+      membershipId: f.ownerB }, requestId, randomUUID())).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+    expect(await prisma.auditEvent.count({ where: { requestId } })).toBe(0);
+  });
+
   it("blocks archived site enrollment", async () => {
+    const requestId = randomUUID();
+    // An existing same-tenant archived site is a lifecycle conflict, not
+    // a missing or foreign resource. Keep the existing service contract.
     await expect(service.enrollStaff(owner(), { role: "SITE_ENGINEER", siteId: f.archivedSite,
-      membershipId: f.subject }, randomUUID(), randomUUID())).rejects.toMatchObject({ status: 404 });
+      membershipId: f.subject }, requestId, randomUUID())).rejects.toMatchObject({ status: 409, code: "CONFLICT" });
+    expect(await prisma.auditEvent.count({ where: { requestId } })).toBe(0);
+    expect(await prisma.siteAssignment.count({ where: { organizationId: f.orgA, siteId: f.archivedSite, membershipId: f.subject } })).toBe(0);
+    expect(await prisma.operationalRoleAssignment.count({ where: { organizationId: f.orgA, siteId: f.archivedSite, membershipId: f.subject } })).toBe(0);
   });
 
   it("atomically creates PM enrollment, lead assignment, grant, and audit", async () => {
