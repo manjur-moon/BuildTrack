@@ -1,0 +1,30 @@
+.bt-kanban { min-width:0; }
+.bt-kanban-filters { display:flex; flex-wrap:wrap; align-items:end; gap:12px; margin:24px 0 12px; padding:16px; border:1px solid var(--bt-line); background:var(--bt-surface); }
+.bt-kanban-filters label { display:flex; flex-direction:column; gap:6px; font-size:12px; font-weight:600; }
+.bt-kanban-filters label:first-child { flex:1; min-width:180px; }
+.bt-kanban-filters input:not([type=checkbox]),.bt-kanban-filters select { background:var(--bt-bg); color:var(--bt-fg); border:1px solid var(--bt-line); padding:10px; min-height:40px; font:inherit; }
+.bt-kanban-filters .bt-kanban-mine { flex-direction:row; align-items:center; align-self:center; }
+.bt-kanban-help { font-size:13px; color:var(--bt-subtle); line-height:1.6; }
+.bt-kanban-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin-top:20px; align-items:start; }
+.bt-kanban-column { min-width:0; min-height:240px; border:1px solid var(--bt-line); background:var(--bt-bg); padding:12px; }
+.bt-kanban-column.bt-kanban-over { outline:2px dashed var(--bt-fg); outline-offset:-3px; }
+.bt-kanban-column header,.bt-kanban-column footer,.bt-kanban-card-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.bt-kanban-column h2 { font-size:15px; font-weight:650; margin:0; }
+.bt-kanban-column header span { font-size:12px; border:1px solid var(--bt-line); padding:4px 8px; }
+.bt-kanban-column footer { flex-wrap:wrap; margin-top:12px; }
+.bt-kanban-cards { display:grid; gap:10px; margin-top:14px; min-height:100px; }
+.bt-kanban-card { position:relative; background:var(--bt-surface); border:1px solid var(--bt-line); padding:12px; min-width:0; overflow-wrap:anywhere; }
+.bt-kanban-card.bt-kanban-dragging { z-index:20; box-shadow:0 5px 20px #0003; }
+.bt-kanban-card h3 { font-size:14px; font-weight:650; margin:10px 0 6px; }
+.bt-kanban-card p,.bt-kanban-card small,.bt-kanban-column small { font-size:11px; line-height:1.5; margin:6px 0; color:var(--bt-subtle); }
+.bt-kanban-card .bt-kanban-warning { font-weight:700; color:var(--bt-fg); border-left:3px solid currentColor; padding-left:6px; }
+.bt-kanban-progress { display:grid; gap:5px; font-size:11px; margin:12px 0; }
+.bt-kanban-progress progress { width:100%; height:7px; accent-color:var(--bt-fg); }
+.bt-kanban button:not(.bt-crud-primary),.bt-kanban-link { font:inherit; font-size:11px; color:var(--bt-fg); border:1px solid var(--bt-line); background:transparent; padding:8px; }
+.bt-kanban button:disabled { opacity:.5; cursor:not-allowed; }
+.bt-kanban button:focus-visible,.bt-kanban a:focus-visible,.bt-kanban input:focus-visible,.bt-kanban select:focus-visible { outline:2px solid var(--bt-fg); outline-offset:2px; }
+.bt-kanban .bt-kanban-handle { cursor:grab; touch-action:none; }
+.bt-kanban-actions { display:flex; flex-wrap:wrap; gap:5px; margin-top:12px; }
+.bt-kanban-empty { color:var(--bt-subtle); font-size:12px; padding:15px 0; }
+@media(max-width:1350px) { .bt-kanban-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:640px) { .bt-kanban-grid { grid-template-columns:minmax(0,1fr); } .bt-kanban-filters { align-items:stretch; } }

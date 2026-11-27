@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { resolveAuthorizationContext } from "@/server/rbac/context";
@@ -19,5 +20,8 @@ export default async function TasksPage() {
     })),
   ];
   const canCreate = probes.some((resource) => hasPermission(actor, "task:create", resource));
-  return <TaskManager canCreate={canCreate} />;
+  return <>
+    <div className="bt-task-board-entry"><Link className="bt-task-plain" href="/dashboard/tasks/board">Open Kanban board →</Link></div>
+    <TaskManager canCreate={canCreate} />
+  </>;
 }
