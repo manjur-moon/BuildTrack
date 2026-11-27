@@ -17,11 +17,12 @@ const keys = (ctx: AuthorizationContext) => getDashboardNavigation(ctx).flatMap(
 
 describe("BuildTrack Step 7 dashboard role-aware navigation", () => {
   it("never assumes an ordinary organization member has operational privileges", () => {
-    expect(keys(context())).toEqual(["overview"]);
+    expect(keys(context())).toEqual(["overview", "notifications"]);
   });
   it("allows owner to see modules including owner-only team management", () => {
     const items = keys(context({ betterAuthRole: "owner" }));
     expect(items).toContain("team");
+    expect(items).toContain("activity");
     expect(items).toContain("finance");
     expect(items).toContain("projects");
   });
@@ -47,10 +48,11 @@ describe("BuildTrack Step 7 dashboard role-aware navigation", () => {
     expect(items).toContain("tasks");
     expect(items).toContain("projects");
     expect(items).not.toContain("finance");
+    expect(items).not.toContain("activity");
   });
   it("ignores cross-organization grants", () => {
     const items = keys(context({ grants: [{ role: "ADMIN", scope: "organization", organizationId: "org-b" }] }));
-    expect(items).toEqual(["overview"]);
+    expect(items).toEqual(["overview", "notifications"]);
   });
   it("rejects inactive membership and unverified email", () => {
     expect(keys(context({ membershipActive: false }))).toEqual(["overview"]);

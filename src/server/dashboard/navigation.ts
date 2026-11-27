@@ -1,3 +1,4 @@
+import { canUseInbox } from "../notifications/rules";
 import { hasPermission, type AuthorizationContext, type Permission, type Resource } from "@/server/rbac/policy";
 
 export type DashboardIcon = "layout" | "building" | "hard-hat" | "check-square" | "boxes" | "wallet" | "chart" | "users";
@@ -25,6 +26,7 @@ const sections: readonly { label: string; items: readonly NavDefinition[] }[] = 
     { key: "finance", label: "Finance", href: "/dashboard/finance", icon: "wallet", description: "Cost tracking and expenses", permissions: ["expense:view"] },
     { key: "contractors", label: "Contractors", href: "/dashboard/contractors", icon: "users", description: "Companies and project assignments", permissions: ["role:assign"] },
     { key: "reports", label: "Reports", href: "/dashboard/reports", icon: "chart", description: "Operational and financial intelligence", permissions: ["report:view"] },
+    { key: "activity", label: "Activity history", href: "/dashboard/activity", icon: "check-square", description: "Organization audit history", permissions: ["audit:view"] },
     { key: "team", label: "Team & access", href: "/dashboard/team", icon: "users", description: "Members and operational roles", permissions: ["role:assign"], ownerOnly: true },
   ] },
 ];
@@ -50,7 +52,8 @@ function canSee(ctx: AuthorizationContext, item: NavDefinition): boolean {
 }
 
 export function getDashboardNavigation(ctx: AuthorizationContext): DashboardGroup[] {
-  const result: DashboardGroup[] = [{ label: "General", items: [overview] }];
+  const inbox: DashboardItem = { key: "notifications", label: "Notifications", href: "/dashboard/notifications", icon: "check-square", description: "Personal alerts and unread messages" };
+  const result: DashboardGroup[] = [{ label: "General", items: canUseInbox(ctx) ? [overview, inbox] : [overview] }];
   for (const group of sections) {
     const allowed = group.items.filter((item) => canSee(ctx, item)).map((item): DashboardItem => ({
       key: item.key, label: item.label, href: item.href, icon: item.icon, description: item.description,

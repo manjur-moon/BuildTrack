@@ -1,0 +1,20 @@
+.bt-inbox { display: grid; gap: 16px; }
+.bt-inbox h1 { font-size: clamp(24px, 4vw, 36px); font-weight: 650; margin: 0; }
+.bt-inbox p { margin: 0; color: var(--bt-subtle); font-size: 13px; }
+.bt-inbox-panel { border: 1px solid var(--bt-line); padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.bt-inbox-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.bt-inbox button,.bt-inbox a,.bt-inbox input,.bt-inbox select { border: 1px solid var(--bt-line); padding: 8px 12px; border-radius: 5px; font: inherit; color: inherit; background: transparent; }
+.bt-inbox button:disabled { opacity: .55; cursor: not-allowed; }
+.bt-inbox a { text-decoration: none; }
+.bt-inbox a:hover,.bt-inbox button:not(:disabled):hover { background: var(--bt-line); }
+.bt-inbox a:focus-visible,.bt-inbox button:focus-visible,.bt-inbox input:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.bt-inbox-action { display: grid; gap: 3px; }
+.bt-inbox-action span { font-size: 12px; }
+.bt-inbox-row { border-bottom: 1px solid var(--bt-line); display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; padding: 12px 0; }
+.bt-inbox-row:last-child { border-bottom: 0; }
+.bt-inbox-row h2 { font-size: 16px; margin: 0 0 6px; }
+.bt-inbox-row time { font-size: 12px; color: var(--bt-subtle); }
+.bt-inbox-table { overflow-x: auto; }
+.bt-inbox-table table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+.bt-inbox-table td,.bt-inbox-table th { padding: 12px; border-bottom: 1px solid var(--bt-line); overflow-wrap: anywhere; }
+@media(max-width:600px) { .bt-inbox-row { grid-template-columns: 1fr; } .bt-inbox-panel { padding: 12px; } }
