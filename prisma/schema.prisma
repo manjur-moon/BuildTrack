@@ -580,6 +580,7 @@ model Expense {
   voidedAt               DateTime?
   voidedByMembershipId   String?
   voidReason             String?
+  replacementOfId        String?
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
   project                Project        @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict)
@@ -587,8 +588,12 @@ model Expense {
   recordedBy             Member         @relation("ExpenseRecorder", fields: [organizationId, recordedByMembershipId], references: [organizationId, id], onDelete: Restrict)
   voidedBy               Member?        @relation("ExpenseVoider", fields: [organizationId, voidedByMembershipId], references: [organizationId, id], onDelete: Restrict)
   attachments            FileAttachment[]
+  replacementOf          Expense? @relation("ExpenseCorrection", fields: [organizationId, projectId, replacementOfId], references: [organizationId, projectId, id], onDelete: Restrict, onUpdate: Restrict, map: "expense_correction_parent_fkey")
+  replacement            Expense? @relation("ExpenseCorrection")
 
   @@unique([organizationId, id])
+  @@unique([organizationId, projectId, id], map: "expense_project_identity_key")
+  @@unique([organizationId, projectId, replacementOfId], map: "expense_single_replacement_key")
   @@index([organizationId, projectId, status, expenseDate])
   @@index([organizationId, categoryId, expenseDate])
 }

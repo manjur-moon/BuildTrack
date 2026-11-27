@@ -98,6 +98,14 @@ export async function createProject(actor: AuthorizationContext, input: CreatePr
       await tx.auditEvent.create({ data: { organizationId: actor.organizationId, actorMembershipId: actor.membershipId,
         action: "PROJECT_CREATED", resourceType: "PROJECT", resourceId: project.id, requestId,
         after: { name: project.name, code: project.code, status: project.status } } });
+      if (input.initialBudget !== undefined) {
+        await assertCurrentWriteAccess(tx, actor, "expense:manage", { organizationId: actor.organizationId, projectId: project.id });
+        const budget = await tx.projectBudget.create({ data: { organizationId: actor.organizationId, projectId: project.id,
+          initialAmount: input.initialBudget, approvedAmount: input.initialBudget, currency: "BDT" } });
+        await tx.auditEvent.create({ data: { organizationId: actor.organizationId, actorMembershipId: actor.membershipId,
+          action: "BUDGET_CREATED", resourceType: "PROJECT_BUDGET", resourceId: budget.id, requestId,
+          after: { amount: budget.approvedAmount.toFixed(2), reason: "Initial project budget" } } });
+      }
       return projectDto(project, "full", actor);
     });
   } catch (error) {

@@ -21,6 +21,7 @@ export const createProjectSchema = z.strictObject({
   location,
   startDate: dateOnly,
   expectedEndDate: dateOnly,
+  initialBudget: z.string().regex(/^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/).optional(),
 }).refine((value) => value.startDate <= value.expectedEndDate,
   { path: ["expectedEndDate"], message: "Expected end cannot precede start" });
 

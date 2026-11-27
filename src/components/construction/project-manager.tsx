@@ -6,7 +6,7 @@ import { ListControls, ListPagination } from "./list-controls";
 import Link from "next/link";
 import { api, jsonRequest, type Page, type Project } from "./api";
 
-const emptyForm = { name: "", code: "", description: "", location: "", startDate: "", expectedEndDate: "", actualEndDate: "", status: "PLANNED" };
+const emptyForm = { name: "", code: "", description: "", location: "", startDate: "", expectedEndDate: "", actualEndDate: "", initialBudget: "", status: "PLANNED" };
 type Form = typeof emptyForm;
 const projectStatuses = ["PLANNED", "ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED"];
 
@@ -43,7 +43,7 @@ export function ProjectManager() {
     setEditing(project);
     setForm({ name: project.name, code: project.code, description: project.description ?? "",
       location: project.location ?? "", startDate: project.startDate ?? "",
-      expectedEndDate: project.expectedEndDate ?? "", actualEndDate: project.actualEndDate ?? "", status: project.status });
+      expectedEndDate: project.expectedEndDate ?? "", actualEndDate: project.actualEndDate ?? "", initialBudget: "", status: project.status });
     setFormOpen(true); setError("");
   }
   function change(field: keyof Form, value: string) {
@@ -66,6 +66,7 @@ export function ProjectManager() {
         await api("/api/v1/projects", jsonRequest("POST", {
           name: form.name, code: form.code, description: form.description || null,
           location: form.location, startDate: form.startDate, expectedEndDate: form.expectedEndDate,
+          ...(form.initialBudget !== "" ? { initialBudget: form.initialBudget } : {}),
         }, draftKey));
         setNotice("Project created successfully.");
         router.replace("/dashboard/projects", { scroll: false });
@@ -97,6 +98,7 @@ export function ProjectManager() {
         <label>Location<input required maxLength={240} value={form.location} onChange={(event) => change("location", event.target.value)}/></label>
         <label>Start date<input required type="date" value={form.startDate} onChange={(event) => change("startDate", event.target.value)}/></label>
         <label>Expected end date<input required type="date" min={form.startDate} value={form.expectedEndDate} onChange={(event) => change("expectedEndDate", event.target.value)}/></label>
+        {!editing && <label>Initial approved budget (BDT, optional)<input inputMode="decimal" pattern={"(0|[1-9][0-9]{0,15})(\\.[0-9]{1,2})?"} value={form.initialBudget} onChange={(event) => change("initialBudget", event.target.value)} placeholder="0.00"/></label>}
         {editing && <><label>Status<select value={form.status} onChange={(event) => change("status", event.target.value)}>{projectStatuses.map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select></label>
           <label>Actual end date<input type="date" min={form.startDate} value={form.actualEndDate} onChange={(event) => change("actualEndDate", event.target.value)}/></label></>}
         <label className="bt-crud-span">Description (optional)<textarea rows={3} maxLength={3000} value={form.description} onChange={(event) => change("description", event.target.value)}/></label>
