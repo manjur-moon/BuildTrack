@@ -17,7 +17,7 @@ const select = {
 type MediaRow = NonNullable<Awaited<ReturnType<typeof findMedia>>>;
 
 async function findMedia(actor: AuthorizationContext, id: string) {
-  return prisma.fileAttachment.findFirst({ where: { id, organizationId: actor.organizationId, deletedAt: null }, select });
+  return prisma.fileAttachment.findFirst({ where: { id, organizationId: actor.organizationId, deletedAt: null, expenseId: null }, select });
 }
 
 async function requireMediaResource(actor: AuthorizationContext, kind: "PROJECT" | "SITE", id: string, permission: "read" | "write") {

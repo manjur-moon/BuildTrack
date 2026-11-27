@@ -29,7 +29,7 @@ export async function listFinance(actor: AuthorizationContext, projectId: string
     const where = { organizationId: actor.organizationId, projectId };
     const summary = await totals(tx, actor.organizationId, projectId);
     const expenses = await tx.expense.findMany({ where, orderBy: [{ expenseDate: "desc" }, { id: "desc" }], skip: (page-1)*20, take: 20,
-      include: { category: { select: { name: true } }, replacement: { select: { id:true } } } });
+      include: { category: { select: { name: true } }, replacement: { select: { id:true } }, attachments: { where: { deletedAt:null }, orderBy: {createdAt:"asc"}, select: {id:true,originalName:true,mimeType:true,byteSize:true,status:true} } } });
     const total = await tx.expense.count({ where });
     const categories = await tx.expenseCategory.findMany({ where: { organizationId: actor.organizationId, archivedAt: null }, orderBy: { name: "asc" }, take: 100 });
     const budget = await tx.projectBudget.findFirst({ where, include: { revisions: { orderBy: { revisionNumber: "desc" }, take: 20 } } });
@@ -38,9 +38,10 @@ export async function listFinance(actor: AuthorizationContext, projectId: string
       canManage: hasPermission(actor,"expense:manage",r), canDraft: hasPermission(actor,"expense:create",r),
       canCategory: hasPermission(actor,"expense-category:manage",resource(actor)),
       expenses: expenses.map(e => ({ id:e.id,title:e.title,category:e.category.name,amount:e.amount.toFixed(2),date:e.expenseDate.toISOString().slice(0,10),status:e.status,
-        canPost: hasPermission(actor,"expense:post",{...r,expenseStatus:e.status,recordedByMembershipId:e.recordedByMembershipId}),
+        canPost: !e.attachments.some(a=>a.status==="PENDING") && hasPermission(actor,"expense:post",{...r,expenseStatus:e.status,recordedByMembershipId:e.recordedByMembershipId}),
         voidReason:e.voidReason, description:e.description, categoryId:e.categoryId, updatedAt:e.updatedAt.toISOString(),
         replacementOfId:e.replacementOfId, replacementId:e.replacement?.id ?? null,
+        documents:e.attachments.map(a=>({id:a.id,name:a.originalName,mimeType:a.mimeType,byteSize:Number(a.byteSize),status:a.status})),
         canEdit:e.status === "DRAFT" && canEditExpense(actor,projectId,e.recordedByMembershipId) })),
       revisions: budget?.revisions.map(x => ({id:x.id,number:x.revisionNumber,previous:x.previousAmount.toFixed(2),amount:x.newAmount.toFixed(2),reason:x.reason,date:x.approvedAt.toISOString()})) ?? [] };
   });
@@ -112,6 +113,7 @@ export async function mutateFinance(actor: AuthorizationContext, input: FinanceI
     }
     if (input.action === "post") {
       if (row.status !== "DRAFT") conflict("Only draft expenses can be posted.");
+      if(await tx.fileAttachment.count({where:{organizationId,expenseId:row.id,status:"PENDING",deletedAt:null}})) conflict("Complete or remove pending expense documents before posting.");
       await assertCurrentWriteAccess(tx,actor,"expense:post",{...resource(actor,input.projectId),expenseStatus:row.status,recordedByMembershipId:row.recordedByMembershipId});
       await tx.expense.update({where:{id:row.id},data:{status:"POSTED",postedAt:new Date(),updatedAt:new Date(Math.max(Date.now(),row.updatedAt.getTime()+1))}});
       await audit(tx,actor,requestId,"EXPENSE_POSTED","EXPENSE",row.id,{status:"POSTED",amount:row.amount.toFixed(2)},{status:"DRAFT"});
