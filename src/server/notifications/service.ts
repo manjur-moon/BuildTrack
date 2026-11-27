@@ -24,6 +24,13 @@ function inboxScope(actor: AuthorizationContext): Prisma.NotificationWhereInput 
   return { organizationId: actor.organizationId, recipientMembershipId: actor.membershipId,
     type: { in: visibleAlertTypes(actor) }, resourceId: null, resourceType: null };
 }
+/** Top-bar count uses the same recipient and visibility policy as the inbox. */
+export async function unreadNotificationCount(actor: AuthorizationContext) {
+  return prisma.$transaction(async tx => {
+    await assertActiveMember(tx, actor);
+    return tx.notification.count({ where: { ...inboxScope(actor), readAt: null } });
+  }, { isolationLevel: "RepeatableRead" });
+}
 /** Never expose legacy free-form bodies or navigation targets; current scope is resolved per HTTP request. */
 export async function listNotifications(actor: AuthorizationContext, query: InboxQuery) {
   return prisma.$transaction(async tx => {

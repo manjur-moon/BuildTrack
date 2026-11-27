@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/server/auth/auth";
 import { prisma } from "@/server/db/client";
 import { resolveAuthorizationContext } from "@/server/rbac/context";
+import { unreadNotificationCount } from "@/server/notifications/service";
 import { getDashboardNavigation } from "@/server/dashboard/navigation";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { OrganizationGate } from "@/components/dashboard/organization-gate";
@@ -44,6 +45,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
   return <DashboardShell
     groups={getDashboardNavigation(context)}
+    unreadCount={await unreadNotificationCount(context)}
     organizations={organizations}
     activeOrganizationId={context.organizationId}
     user={{ name: session.user.name, email: session.user.email }}

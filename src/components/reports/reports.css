@@ -1,0 +1,12 @@
+.bt-report { display:grid; gap:16px; min-width:0; }
+.bt-report h1 { font-size:clamp(24px,4vw,40px); font-weight:700; }
+.bt-report h2 { font-size:20px; font-weight:600; }
+.bt-report-nav { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.bt-report-nav a,.bt-report-nav button { padding:8px 12px; border:1px solid var(--bt-line); border-radius:5px; }
+.bt-report-nav a[aria-current] { text-decoration:underline; font-weight:700; }
+.bt-report-nav input { border:1px solid var(--bt-line); padding:6px; max-width:100%; }
+.bt-report td a { text-decoration:underline; }
+.bt-report-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+.bt-report-metrics div { border:1px solid var(--bt-line); padding:12px; overflow-wrap:anywhere; }
+.bt-report-metrics dd { font-weight:700; font-variant-numeric:tabular-nums; }
+.bt-report progress { width:100%; accent-color:#25836b; }

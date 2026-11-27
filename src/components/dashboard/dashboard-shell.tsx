@@ -35,13 +35,14 @@ function getServerSidebarPreference() {
   return false;
 }
 
-export function DashboardShell({ children, groups, organizations, activeOrganizationId, user, roleLabels }: {
+export function DashboardShell({ children, groups, organizations, activeOrganizationId, user, roleLabels, unreadCount }: {
   children: ReactNode;
   groups: readonly DashboardGroup[];
   organizations: readonly OrganizationChoice[];
   activeOrganizationId: string;
   user: { name: string; email: string };
   roleLabels: readonly string[];
+  unreadCount?: number;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -148,6 +149,9 @@ export function DashboardShell({ children, groups, organizations, activeOrganiza
         </div>
         <div className="bt-topbar-actions">
           <div className="bt-topbar-org"><OrganizationPicker organizations={organizations} activeId={activeOrganizationId} label="Company"/></div>
+          {unreadCount !== undefined && <Link href="/dashboard/notifications" className="bt-icon-button" style={{width:"auto",paddingInline:8,gap:4}} aria-label={`${unreadCount} unread notifications`} title={`${unreadCount} unread notifications`}>
+            <BtIcon name="check-square" size={18}/><span>{unreadCount > 99 ? "99+" : unreadCount}</span>
+          </Link>}
           <ThemeSwitcher compact/>
           <div className="bt-user-chip" title={user.email} aria-label={`Signed in as ${user.name}`}>
             <span className="bt-avatar">{initials}</span><span className="bt-user-name">{user.name}</span>

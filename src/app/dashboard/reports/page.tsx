@@ -1,0 +1,39 @@
+import Link from "next/link";
+import { headers } from "next/headers";
+import { notFound, redirect } from "next/navigation";
+import { resolveAuthorizationContext } from "@/server/rbac/context";
+import { getPermittedSection } from "@/server/dashboard/navigation";
+import { reportScope, reportProjects, projectReport, type ReportKind } from "@/server/reports/service";
+import { reportPage, REPORT_PAGE_SIZE, dateLabel } from "@/server/reports/rules";
+import { ExpenseTrend } from "@/components/reports/expense-trend";
+import "@/components/dashboard/analytics.css";
+import "@/components/reports/reports.css";
+export const dynamic="force-dynamic";
+const labels:Record<ReportKind,string>={timeline:"Project timeline",finance:"Financial reports",contractors:"Contractor task outcomes"};
+const kinds:ReportKind[]=["timeline","finance","contractors"];
+function href(kind:ReportKind,page=1,id?:string,q="") { const p=new URLSearchParams({kind,page:String(page)});if(id)p.set("project",id);if(q)p.set("q",q);return `/dashboard/reports?${p}`; }
+function Pager({kind,page,total,id,q}:{kind:ReportKind;page:number;total:number;id?:string;q?:string}) {return <nav className="bt-report-nav" aria-label="Report pagination">{page>1&&<Link href={href(kind,page-1,id,q)}>Previous</Link>}<span>Page {page} · {total} records</span>{page*REPORT_PAGE_SIZE<total&&page<9999&&<Link href={href(kind,page+1,id,q)}>Next</Link>}</nav>}
+function bdt(s:string|null){return s===null?"N/A":`BDT ${s}`;}
+export default async function ReportsPage({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}){
+  const actor=await resolveAuthorizationContext(await headers());if(!actor)redirect("/dashboard");
+  if(!getPermittedSection(actor,"reports"))notFound();
+  const params=await searchParams;
+  const available=kinds.filter(k=>reportScope(actor,k).allowed);
+  const raw=params.kind; const page=reportPage(params.page); const id=params.project;const q=params.q??"";
+  if(page===null||typeof q!=="string"||q.length>100||(id!==undefined&&(typeof id!=="string"||!id||id.length>128))||(raw!==undefined&&(typeof raw!=="string"||!kinds.includes(raw as ReportKind))))notFound();
+  const kind=raw===undefined?available[0]:raw as ReportKind;
+  if(kind&&!available.includes(kind))notFound();
+  const detail=kind&&id?await projectReport(actor,kind,id,page):null;
+  if(id&&!detail)notFound();
+  const projects=kind&&!id?await reportProjects(actor,kind,q.trim(),page):null;
+  return <section className="bt-report"><header><p className="bt-section-kicker">BUILDTRACK / REPORTS</p><h1>Operational intelligence</h1><p>Live records · Asia/Dhaka · Non-archived projects</p></header>
+    <nav className="bt-report-nav" aria-label="Report types">{available.map(k=><Link key={k} aria-current={k===kind?"page":undefined} href={href(k)}>{labels[k]}</Link>)}<Link href="/dashboard/progress">Daily site reports</Link></nav>
+    {!kind&&<p>Use Daily site reports to review observations in your authorized sites.</p>}
+    {kind&&projects&&<div className="bt-analytics-panel"><h2>{labels[kind]}</h2><form action="/dashboard/reports" className="bt-report-nav"><input type="hidden" name="kind" value={kind}/><label>Project name or code <input name="q" defaultValue={q} maxLength={100}/></label><button type="submit">Search</button></form><div className="bt-analytics-table"><table><thead><tr><th scope="col">Project</th><th scope="col">Status</th><th scope="col">Deadline</th></tr></thead><tbody>{projects.items.map(p=><tr key={p.id}><td><Link href={href(kind,1,p.id)}>{p.name} ({p.code})</Link></td><td>{p.status}</td><td>{dateLabel(p.expectedEndDate)}</td></tr>)}</tbody></table></div>{!projects.items.length&&<p>No matching authorized projects.</p>}<Pager kind={kind} page={page} total={projects.total} q={q}/></div>}
+    {detail&&<><div className="bt-report-nav"><Link href={href(detail.kind)}>Back to projects</Link><h2>{detail.project.name} · {detail.project.code}</h2></div>
+      {detail.kind==="finance"&&<><div className="bt-analytics-panel"><h3>Budget position (BDT)</h3><dl className="bt-report-metrics">{[["Approved",bdt(detail.totals.approved)],["Posted",bdt(detail.totals.actual)],["Remaining",bdt(detail.totals.remaining)],["Utilization",detail.totals.utilization===null?"N/A":`${detail.totals.utilization}%`],["Overrun",bdt(detail.totals.overrun)]].map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl></div><div className="bt-analytics-panel"><h3>Monthly posted expenditure</h3><p>Last 12 months through today. Bar height is relative to the largest month; exact BDT amounts below.</p><ExpenseTrend rows={detail.trend}/><div className="bt-analytics-table"><table><thead><tr><th scope="col">Month</th><th scope="col">Amount (BDT)</th></tr></thead><tbody>{detail.trend.map(r=><tr key={r.label}><td>{r.label}</td><td>{r.amount}</td></tr>)}</tbody></table></div></div><div className="bt-analytics-panel"><h3>Posted expense history</h3><div className="bt-analytics-table"><table><thead><tr><th scope="col">Expense</th><th scope="col">Category</th><th scope="col">Date</th><th scope="col">BDT</th></tr></thead><tbody>{detail.items.map(r=><tr key={r.id}><td>{r.title}</td><td>{r.category.name}</td><td>{r.expenseDate}</td><td>{r.amount}</td></tr>)}</tbody></table></div>{!detail.items.length&&<p>No posted expenses.</p>}<Pager kind={detail.kind} page={page} total={detail.total} id={detail.project.id}/></div></>}
+      {detail.kind==="timeline"&&<><div className="bt-analytics-panel"><h3>Project schedule</h3><p>{dateLabel(detail.project.startDate)} → {dateLabel(detail.project.expectedEndDate)} · {detail.project.status}</p><p>Authoritative task average: {detail.progress}% · {detail.total} tasks</p><progress max={100} value={Number(detail.progress)} aria-label="Project progress"/></div><div className="bt-analytics-panel"><h3>Task deadlines</h3><div className="bt-analytics-table"><table><thead><tr><th scope="col">Task</th><th scope="col">Start</th><th scope="col">Due</th><th scope="col">Status</th><th scope="col">Progress</th></tr></thead><tbody>{detail.tasks.map(t=><tr key={t.id}><td>{t.title}</td><td>{t.startsOn?dateLabel(t.startsOn):"—"}</td><td>{dateLabel(t.dueOn)}</td><td>{t.status}{t.status!=="COMPLETED"&&dateLabel(t.dueOn)<detail.today?" · Overdue":""}</td><td>{t.progressPercent}%</td></tr>)}</tbody></table></div>{!detail.tasks.length&&<p>No tasks on this page.</p>}</div><div className="bt-analytics-panel"><h3>Milestone deadlines</h3><div className="bt-analytics-table"><table><thead><tr><th scope="col">Milestone</th><th scope="col">Due</th><th scope="col">Status</th></tr></thead><tbody>{detail.milestones.map(m=><tr key={m.id}><td>{m.title}</td><td>{dateLabel(m.dueDate)}</td><td>{m.status}{m.status==="PLANNED"&&dateLabel(m.dueDate)<detail.today?" · Overdue":""}</td></tr>)}</tbody></table></div>{!detail.milestones.length&&<p>No milestones on this page.</p>}<Pager kind={detail.kind} page={page} total={Math.max(detail.total,detail.milestoneTotal)} id={detail.project.id}/></div></>}
+      {detail.kind==="contractors"&&<div className="bt-analytics-panel"><h3>Current contractor task outcomes</h3><p>Current project affiliations and active task assignments only; not a historical company ranking. Shared tasks may count for multiple companies.</p><div className="bt-analytics-table"><table><thead><tr><th scope="col">Company</th><th scope="col">Assigned tasks</th><th scope="col">Completed</th><th scope="col">Overdue</th><th scope="col">Completion rate</th></tr></thead><tbody>{detail.items.map(r=><tr key={r.id}><td>{r.name} · {r.status}</td><td>{r.assigned}</td><td>{r.completed}</td><td>{r.overdue}</td><td>{r.completion===null?"N/A":`${r.completion}%`}</td></tr>)}</tbody></table></div>{!detail.items.length&&<p>No current contractor assignments.</p>}<Pager kind={detail.kind} page={page} total={detail.total} id={detail.project.id}/></div>}
+    </>}
+  </section>;
+}

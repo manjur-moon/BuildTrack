@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { resolveAuthorizationContext } from "@/server/rbac/context";
 import { getDashboardNavigation, type DashboardIcon } from "@/server/dashboard/navigation";
 import { loadDashboardAnalytics } from "@/server/dashboard/analytics";
+import { ExpenseTrend } from "@/components/reports/expense-trend";
 import { BtIcon } from "@/components/dashboard/icons";
 import "@/components/dashboard/analytics.css";
 
@@ -45,7 +46,6 @@ export default async function DashboardOverview() {
     {label:"Pending requests",value:i.pendingRequests,detail:"Accessible inventory sites",icon:"boxes"});
   if(data.reportsToday!==null)operational.push({label:"Reports today",value:data.reportsToday,detail:"Accessible sites · work date",icon:"check-square"});
   if(data.ownReports!==null)operational.push({label:"My task reports",value:data.ownReports,detail:"Currently accessible tasks",icon:"check-square"});
-  const trendMax=f?f.trend.reduce((max,r)=>{const n=BigInt(r.amount.replace(".",""));return n>max?n:max;},0n):0n;
   return <div className="bt-overview">
     <section className="bt-overview-hero" aria-labelledby="bt-overview-title">
       <div className="bt-hero-eyebrow"><span className="bt-eyebrow-rule"/> YOUR WORKSPACE, IN FOCUS</div>
@@ -67,7 +67,9 @@ export default async function DashboardOverview() {
         {label:"Unbudgeted spend",value:bdt(f.unbudgetedSpend),detail:"Posted costs without approved budget",icon:"wallet"},
       ]}/>
       <div className="bt-analytics-panel"><h3>Monthly posted expenditure</h3><p>Last six calendar months · current month through today</p>
-        <div className="bt-trend">{f.trend.map(r=>{const amount=BigInt(r.amount.replace(".","")); const percent=trendMax===0n?0:Number(amount*10000n/trendMax)/100;return <div className="bt-trend-row" key={r.label}><span>{r.label}</span><div className="bt-trend-track" aria-hidden="true"><div style={{width:`${percent}%`}}/></div><strong>{bdt(r.amount)}</strong></div>;})}</div>
+        <p>Chart heights relative to the largest month; exact BDT amounts below.</p>
+        <ExpenseTrend rows={f.trend}/>
+        <div className="bt-analytics-table"><table><thead><tr><th scope="col">Month</th><th scope="col">Posted expenditure</th></tr></thead><tbody>{f.trend.map(r=><tr key={r.label}><td>{r.label}</td><td>{bdt(r.amount)}</td></tr>)}</tbody></table></div>
       </div>
     </section>}
     {p&&<section className="bt-overview-section" aria-labelledby="bt-project-progress"><div className="bt-section-heading"><div><p className="bt-section-kicker">PORTFOLIO</p><h2 id="bt-project-progress">Project progress</h2></div><Link href="/dashboard/projects">All projects</Link></div>
